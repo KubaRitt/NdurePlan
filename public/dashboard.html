@@ -996,8 +996,16 @@
             targetDateInput.value = targetDateStr;
 
             document.getElementById('modal-description-input').value = '';
+            document.getElementById('modal-sport-select').value = 'run';
+            document.getElementById('modal-time-input').value = '08:00';
 
+            // Clear both the JS state AND the rendered DOM rows — clearing
+            // currentModalBlocks alone left stale block rows on screen, and
+            // the next addBlockToModalForm() call would then create a new
+            // row with a colliding id (modal-block-row-0) on top of it.
             currentModalBlocks = [];
+            document.getElementById('modal-blocks-container').innerHTML = '';
+
             // Seed a default Warm-Up block
             addBlockToModalForm();
 
