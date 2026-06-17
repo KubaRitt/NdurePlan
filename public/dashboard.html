@@ -251,6 +251,12 @@
                     </div>
                 </div>
 
+                <!-- Session description -->
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">Description <span class="text-zinc-300 font-normal">(optional)</span></label>
+                    <input type="text" id="modal-description-input" placeholder="e.g. Tempo run with hill repeats" maxlength="120" class="w-full text-xs p-2.5 border border-zinc-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-900">
+                </div>
+
                 <!-- Workout block builder area -->
                 <div class="space-y-3">
                     <div class="flex items-center justify-between border-b pb-2">
@@ -325,6 +331,23 @@
             const m = String(date.getMonth() + 1).padStart(2, '0');
             const d = String(date.getDate()).padStart(2, '0');
             return `${y}-${m}-${d}`;
+        }
+
+        // Parse a YYYY-MM-DD string into a LOCAL midnight Date.
+        // new Date('2026-06-21') parses as UTC midnight per the JS spec, which
+        // for any timezone ahead of UTC rolls back to the previous local day —
+        // this reads the parts directly and builds the date with local semantics.
+        function parseLocalDateStr(dateStr) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        // Escape user-provided text before inserting into innerHTML templates,
+        // since session descriptions are free text and must not be trusted raw.
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str || '';
+            return div.innerHTML;
         }
 
         // Load real user data from Supabase
@@ -454,7 +477,7 @@
 
                 const isSelected = selectedDate.getDate() === day && selectedDate.getMonth() === activeMonthYear.month && selectedDate.getFullYear() === activeMonthYear.year;
                 const hasSessions = trainingSessions.some(s => {
-                    const dateObj = new Date(s.date);
+                    const dateObj = parseLocalDateStr(s.date);
                     return dateObj.getDate() === day && dateObj.getMonth() === activeMonthYear.month && dateObj.getFullYear() === activeMonthYear.year;
                 });
 
@@ -615,6 +638,7 @@
 
                             const sessCard = document.createElement('div');
                             sessCard.className = `p-2 rounded-lg border text-[10px] leading-snug ${iconColor} hover:shadow-sm transition-all`;
+                            if (s.description) sessCard.title = s.description;
                             sessCard.innerHTML = `
                                 <div class="flex items-center justify-between font-bold">
                                     <span class="uppercase tracking-wider text-[8px]">${s.sport_type.split(' ')[0]}</span>
@@ -622,6 +646,7 @@
                                 </div>
                                 <div class="mt-1 font-extrabold text-zinc-900">${totalDuration}m</div>
                                 <div class="text-[8px] opacity-75 mt-0.5">${s.time}</div>
+                                ${s.description ? `<div class="text-[8px] opacity-90 mt-0.5 truncate font-medium">${escapeHtml(s.description)}</div>` : ''}
                             `;
                             sessionsListInner.appendChild(sessCard);
                         });
@@ -734,7 +759,9 @@
 
                             const badge = document.createElement('div');
                             badge.className = `text-[7px] font-bold py-0.5 px-1 rounded border leading-tight truncate tracking-tight ${badgeStyle}`;
-                            badge.textContent = `${s.sport_type.split(' ')[0].toUpperCase()} ${totalDuration}m`;
+                            const sportLabel = `${s.sport_type.split(' ')[0].toUpperCase()} ${totalDuration}m`;
+                            badge.textContent = s.description ? `${sportLabel} · ${s.description}` : sportLabel;
+                            if (s.description) badge.title = s.description;
                             badgeContainer.appendChild(badge);
                         });
 
@@ -777,17 +804,19 @@
                 const day = curr.getDay();
                 const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
                 const startOfWeek = new Date(curr.setDate(diff));
+                startOfWeek.setHours(0, 0, 0, 0);
                 const endOfWeek = new Date(startOfWeek);
                 endOfWeek.setDate(endOfWeek.getDate() + 6);
+                endOfWeek.setHours(23, 59, 59, 999);
 
                 trainingSessions.forEach(s => {
-                    const sd = new Date(s.date);
+                    const sd = parseLocalDateStr(s.date);
                     if (sd >= startOfWeek && sd <= endOfWeek) listToCalc.push(s);
                 });
             } else {
                 filterRangeTitle = "This Month";
                 trainingSessions.forEach(s => {
-                    const sd = new Date(s.date);
+                    const sd = parseLocalDateStr(s.date);
                     if (sd.getMonth() === activeMonthYear.month && sd.getFullYear() === activeMonthYear.year) {
                         listToCalc.push(s);
                     }
@@ -893,6 +922,7 @@
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>
+                    ${s.description ? `<p class="text-xs text-zinc-600 font-medium leading-snug">${escapeHtml(s.description)}</p>` : ''}
                     <div class="space-y-2">
                 `;
 
@@ -964,6 +994,8 @@
             // Set current selectedDate in modal input
             const targetDateStr = toLocalDateStr(selectedDate);
             targetDateInput.value = targetDateStr;
+
+            document.getElementById('modal-description-input').value = '';
 
             currentModalBlocks = [];
             // Seed a default Warm-Up block
@@ -1059,6 +1091,7 @@
             const sportSelect = document.getElementById('modal-sport-select').value;
             const dateVal = document.getElementById('modal-date-input').value;
             const timeVal = document.getElementById('modal-time-input').value;
+            const descriptionVal = document.getElementById('modal-description-input').value.trim();
 
             if (!dateVal || !timeVal) {
                 alert("Please select date and start time values.");
@@ -1097,7 +1130,8 @@
                     sport_type: sportSelect,
                     date: dateVal,
                     time: timeVal,
-                    blocks: finalizedBlocks
+                    blocks: finalizedBlocks,
+                    description: descriptionVal
                 });
 
                 trainingSessions.push(savedSession);
