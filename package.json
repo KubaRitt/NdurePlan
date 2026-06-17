@@ -1,0 +1,11 @@
+{
+  "name": "ndureplan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NdurePlan - Athletic Training & HR Planner",
+  "scripts": {
+    "dev": "npx serve .",
+    "build": "echo \"Static site - no build step required\"",
+    "start": "npx serve ."
+  }
+}

@@ -33,11 +33,11 @@
     <!-- Top Logo / Header -->
     <header class="p-6">
         <div class="max-w-7xl mx-auto flex justify-between items-center">
-            <a href="landing.html" class="flex items-center gap-2.5 font-bold text-lg tracking-tight hover:opacity-95 transition-opacity">
+            <a href="index.html" class="flex items-center gap-2.5 font-bold text-lg tracking-tight hover:opacity-95 transition-opacity">
                 <div class="h-8 w-8 bg-zinc-900 rounded-lg flex items-center justify-center text-white text-sm font-mono">N</div>
                 <span>Ndure<span class="text-zinc-500 font-normal">Plan</span></span>
             </a>
-            <a href="landing.html" class="text-xs font-medium text-zinc-500 hover:text-zinc-900 flex items-center gap-1">
+            <a href="index.html" class="text-xs font-medium text-zinc-500 hover:text-zinc-900 flex items-center gap-1">
                 <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back to Home
             </a>
         </div>
@@ -46,7 +46,7 @@
     <!-- Main Centered Form Card -->
     <main class="flex-grow flex items-center justify-center px-4 py-8">
         <div class="w-full max-w-md bg-white border border-zinc-200/90 rounded-2xl shadow-xl shadow-zinc-100 p-8 space-y-8 relative">
-            
+
             <!-- Tab Toggle Button at the very top of the fields -->
             <div class="flex p-1 bg-zinc-100 rounded-xl border border-zinc-200/40" id="auth-toggle">
                 <button type="button" onclick="setAuthTab('login')" id="btn-login-tab" class="flex-1 text-center py-2 text-xs font-semibold rounded-lg transition-all bg-white text-zinc-900 shadow-sm">
@@ -131,7 +131,7 @@
                 // Style tab active
                 btnLogin.className = "flex-1 text-center py-2 text-xs font-semibold rounded-lg transition-all bg-white text-zinc-900 shadow-sm";
                 btnRegister.className = "flex-1 text-center py-2 text-xs font-semibold rounded-lg transition-all text-zinc-500 hover:text-zinc-900";
-                
+
                 // Labels
                 title.textContent = "Welcome Back";
                 subtitle.textContent = "Enter your email and password to access your athletic sessions";
@@ -140,7 +140,7 @@
                 // Style tab active
                 btnRegister.className = "flex-1 text-center py-2 text-xs font-semibold rounded-lg transition-all bg-white text-zinc-900 shadow-sm";
                 btnLogin.className = "flex-1 text-center py-2 text-xs font-semibold rounded-lg transition-all text-zinc-500 hover:text-zinc-900";
-                
+
                 // Labels
                 title.textContent = "Create an Account";
                 subtitle.textContent = "Enter your details to structure training blocks and heart rate zones";
@@ -169,7 +169,7 @@
 
             // Success simulation
             messageBox.className = "p-3 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-650 border border-emerald-200/50 block";
-            
+
             if (currentTab === 'login') {
                 messageBox.textContent = "Authenticating... Loading your athletic planner.";
             } else {

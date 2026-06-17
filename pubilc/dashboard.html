@@ -42,7 +42,7 @@
         <div class="max-w-[1600px] mx-auto px-6 h-16 flex items-center justify-between">
             <!-- App Name & Brand -->
             <div class="flex items-center gap-8">
-                <a href="landing.html" class="flex items-center gap-2.5 font-bold text-lg tracking-tight hover:opacity-90 transition-opacity">
+                <a href="index.html" class="flex items-center gap-2.5 font-bold text-lg tracking-tight hover:opacity-90 transition-opacity">
                     <div class="h-8 w-8 bg-zinc-950 rounded-lg flex items-center justify-center text-white text-sm font-mono leading-none">N</div>
                     <span>Ndure<span class="text-zinc-500 font-normal">Plan</span></span>
                 </a>
@@ -76,10 +76,10 @@
 
         <!-- PLAN VIEW TAB -->
         <div id="tab-view-plan" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            
+
             <!-- LEFT BAR (Calendar & Totals) : LG matches 3-column layout -->
             <section class="lg:col-span-3 space-y-6">
-                
+
                 <!-- Modern Mini Interactive Calendar -->
                 <div class="bg-white border border-zinc-200/80 rounded-2xl p-5 shadow-sm space-y-4">
                     <div class="flex items-center justify-between border-b border-zinc-100 pb-3">
@@ -114,7 +114,7 @@
                         <h3 class="text-xs font-bold uppercase tracking-wider text-zinc-400">Selected Week Goals</h3>
                         <span class="text-[10px] font-mono bg-zinc-100 text-zinc-600 rounded px-1.5 py-0.5">Totals</span>
                     </div>
-                    
+
                     <div class="grid grid-cols-1 gap-3" id="totals-container">
                         <!-- Filled template fields dynamically via JS -->
                     </div>
@@ -132,7 +132,7 @@
                             </h2>
                             <p class="text-xs text-zinc-400 font-light">Schedule training sessions and monitor intensities</p>
                         </div>
-                        
+
                         <!-- Week/Month view Option Toggles -->
                         <div class="flex items-center gap-1 bg-zinc-100/80 border border-zinc-200/40 p-1 rounded-xl">
                             <button onclick="setCalendarView('week')" id="btn-view-week" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-zinc-900 shadow-sm transition-all">
@@ -442,7 +442,7 @@
             if (startDayCode === -1) startDayCode = 6;
 
             const daysInMonth = new Date(activeMonthYear.year, activeMonthYear.month + 1, 0).getDate();
-            
+
             // Set header label
             const monthsNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
             document.getElementById('calendar-header-month').textContent = `${monthsNames[activeMonthYear.month]} ${activeMonthYear.year}`;
@@ -459,7 +459,7 @@
             for (let day = 1; day <= daysInMonth; day++) {
                 const dayDiv = document.createElement('button');
                 dayDiv.type = 'button';
-                
+
                 const isSelected = selectedDate.getDate() === day && selectedDate.getMonth() === activeMonthYear.month && selectedDate.getFullYear() === activeMonthYear.year;
                 const hasSessions = trainingSessions.some(s => {
                     const dateObj = new Date(s.date);
@@ -531,7 +531,7 @@
             });
 
             localStorage.setItem('ndure_hr_zones', JSON.stringify(hrZones));
-            
+
             // Render alerts briefly inside header or with subtle styled message
             alert("Success: Athletic HR zones updated and synchronized across all workout blocks.");
             renderAll();
@@ -554,19 +554,19 @@
                 // Render week header range label
                 const endOfWeek = new Date(startOfWeek);
                 endOfWeek.setDate(endOfWeek.getDate() + 6);
-                
+
                 const optFormat = { month: 'short', day: 'numeric' };
                 document.getElementById('middle-view-header').textContent = `Workouts: Week of ${startOfWeek.toLocaleDateString('en-US', optFormat)} - ${endOfWeek.toLocaleDateString('en-US', optFormat)}`;
 
                 for (let i = 0; i < 7; i++) {
                     const d = new Date(startOfWeek);
                     d.setDate(startOfWeek.getDate() + i);
-                    
+
                     const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
                     const dayNum = d.getDate();
                     const dayStr = d.toISOString().split('T')[0];
                     const isSelected = d.toDateString() === selectedDate.toDateString();
-                    
+
                     const daySessions = trainingSessions.filter(s => s.date === dayStr);
 
                     // Create Column Element
@@ -590,7 +590,7 @@
 
                     const sessionsWrapper = document.createElement('div');
                     sessionsWrapper.className = "flex-grow flex flex-col gap-1.5 justify-between min-h-[120px]";
-                    
+
                     if (daySessions.length === 0) {
                         // Empty slot to quick-add
                         const addCard = document.createElement('div');
@@ -609,7 +609,7 @@
 
                         daySessions.forEach(s => {
                             const totalDuration = s.blocks.reduce((acc, b) => acc + (parseInt(b.time_min) || 0), 0);
-                            
+
                             let sportIcon = '👟';
                             let iconColor = 'border-emerald-100 bg-emerald-50 text-emerald-800';
                             if (s.sport_type === 'run') { sportIcon = '👟'; iconColor = 'border-emerald-100 bg-emerald-50 text-emerald-800'; }
@@ -704,7 +704,7 @@
                     // Cell Top bar (Day number + optional "+" quick add)
                     const cellTop = document.createElement('div');
                     cellTop.className = "flex justify-between items-center";
-                    
+
                     const dayNumSpan = document.createElement('span');
                     dayNumSpan.className = `text-[10px] font-mono font-extrabold ${isSelected ? 'text-zinc-950' : 'text-zinc-500'}`;
                     dayNumSpan.textContent = day;
@@ -729,7 +729,7 @@
                     if (daySessions.length > 0) {
                         daySessions.slice(0, 2).forEach(s => {
                             const totalDuration = s.blocks.reduce((acc, b) => acc + (parseInt(b.time_min) || 0), 0);
-                            
+
                             let badgeStyle = "bg-zinc-100 text-zinc-700";
                             if (s.sport_type === 'run') badgeStyle = "bg-emerald-50 text-emerald-800 border-emerald-100";
                             else if (s.sport_type === 'bike') badgeStyle = "bg-blue-50 text-blue-800 border-blue-100";
@@ -811,7 +811,7 @@
 
             // Put a header total inside
             const totalHoursDec = (totalMin / 60).toFixed(1);
-            
+
             const headDiv = document.createElement('div');
             headDiv.className = "text-center py-3 bg-zinc-50 border border-zinc-100 rounded-xl space-y-1 mb-2";
             headDiv.innerHTML = `
@@ -826,11 +826,11 @@
             sportsList.forEach(sport => {
                 const dist = sportsDist[sport];
                 const mins = sportMinutes[sport];
-                
+
                 if (mins > 0 || dist > 0) {
                     const card = document.createElement('div');
                     card.className = "flex items-center justify-between text-xs p-2.5 rounded-lg border border-zinc-100 bg-white/70 shadow-sm";
-                    
+
                     let sportLabel = sport.charAt(0).toUpperCase() + sport.slice(1);
                     card.innerHTML = `
                         <div class="flex items-center gap-2">
@@ -958,7 +958,7 @@
         function triggerAddSessionModal() {
             const modal = document.getElementById('add-session-modal');
             const targetDateInput = document.getElementById('modal-date-input');
-            
+
             // Set current selectedDate in modal input
             const targetDateStr = selectedDate.toISOString().split('T')[0];
             targetDateInput.value = targetDateStr;
@@ -1001,7 +1001,7 @@
 
             row.innerHTML = `
                 <button type="button" onclick="removeBlockFromModalForm(${idx})" class="absolute top-3 right-3 text-zinc-400 hover:text-red-500 text-xs">&times;</button>
-                
+
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 columns-2">
                     <div>
                         <label class="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Block Label name</label>
@@ -1048,7 +1048,7 @@
             const sport = document.getElementById('modal-sport-select').value;
             const chosenZone = document.getElementById(`block-intensity-${idx}`).value;
             const targetHRInput = document.getElementById(`block-hr-${idx}`);
-            
+
             // Set dynamic HR defaults
             targetHRInput.value = hrZones[sport][chosenZone] || 120;
         }
@@ -1072,7 +1072,7 @@
                 const intensity = document.getElementById(`block-intensity-${idx}`).value;
                 const target_hr = parseInt(document.getElementById(`block-hr-${idx}`).value) || 120;
                 const time_min = parseInt(document.getElementById(`block-time-${idx}`).value) || 0;
-                
+
                 const rawDist = document.getElementById(`block-distance-${idx}`).value;
                 const distance_km = rawDist !== "" ? parseFloat(rawDist) : null;
 
@@ -1100,7 +1100,7 @@
 
             trainingSessions.push(model);
             localStorage.setItem('ndure_sessions', JSON.stringify(trainingSessions));
-            
+
             closeAddSessionModal();
             renderAll();
         }
