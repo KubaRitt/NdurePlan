@@ -1,16 +1,16 @@
 /**
  * NdurePlan - Supabase JS API Library
- * 
+ *
  * Install dependency: npm install @supabase/supabase-js
- * 
+ *
  * Replace placeholders with your actual Supabase URL & Public Anon key
  * found in your Supabase Account Dashboard (Project Settings -> API).
  */
 
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://your-supabase-project-reference.supabase.co';
-const SUPABASE_ANON_KEY = 'your-actual-anon-public-key-value';
+const SUPABASE_URL = 'https://ogikyrfnsaswqwsldkhr.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9naWt5cmZuc2Fzd3F3c2xka2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NDAwNzUsImV4cCI6MjA5NzAxNjA3NX0.a00mYAiTDWqm5R3VEoO3cUmwjbnXfePoHGSsfpVKLAE';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -70,7 +70,7 @@ export async function updateAthleteHRZones(updatedZonesObject) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .update({ 
+    .update({
       hr_zones: updatedZonesObject,
       updated_at: new Date()
     })
