@@ -291,14 +291,25 @@
     </footer>
 
 
-    <script>
+    <script type="module">
+        import {
+            signOutAthlete,
+            fetchAthleteProfile,
+            updateAthleteHRZones,
+            fetchSessionsByDateRange,
+            createTrainingSession,
+            updateTrainingSession,
+            deleteTrainingSession,
+            supabase
+        } from './supabase_api.js';
+
         // CLIENT STATE MANAGEMENT
         let activeTab = 'plan';
         let calendarView = 'week'; // 'week' or 'month'
         let selectedDate = new Date(2026, 5, 16); // June 16, 2026 (Mon/Tue range)
         let activeMonthYear = { month: 5, year: 2026 }; // June 2026
 
-        // HR Zones Matrix state (defaults to localStorage if exists, else initial seed)
+        // HR Zones Matrix state (loaded from Supabase profile on page load)
         let hrZones = {
             "run": {"easy": 120, "ap1": 135, "ap2": 150, "ap3": 170},
             "bike": {"easy": 110, "ap1": 125, "ap2": 140, "ap3": 155},
@@ -307,61 +318,36 @@
             "backcountry ski": {"easy": 115, "ap1": 128, "ap2": 142, "ap3": 158}
         };
 
-        // Saved sessions mock state
-        let trainingSessions = [
-            {
-                id: '1',
-                sport_type: 'run',
-                date: '2026-06-15',
-                time: '08:30',
-                blocks: [
-                    { type: 'Warmup', intensity: 'easy', target_hr: 120, time_min: 15, distance_km: null },
-                    { type: 'Interval Set 1', intensity: 'ap2', target_hr: 150, time_min: 20, distance_km: 4.0 },
-                    { type: 'Cooldown', intensity: 'easy', target_hr: 115, time_min: 10, distance_km: null }
-                ]
-            },
-            {
-                id: '2',
-                sport_type: 'bike',
-                date: '2026-06-16',
-                time: '14:00',
-                blocks: [
-                    { type: 'Base endurance', intensity: 'ap1', target_hr: 125, time_min: 90, distance_km: 38.0 },
-                    { type: 'Short spin', intensity: 'easy', target_hr: 105, time_min: 30, distance_km: 10.0 }
-                ]
-            },
-            {
-                id: '3',
-                sport_type: 'swim',
-                date: '2026-06-17',
-                time: '18:00',
-                blocks: [
-                    { type: 'Warmup', intensity: 'easy', target_hr: 110, time_min: 10, distance_km: 0.5 },
-                    { type: 'Main sets', intensity: 'ap3', target_hr: 145, time_min: 30, distance_km: 1.5 },
-                    { type: 'Recovery', intensity: 'easy', target_hr: 112, time_min: 15, distance_km: 0.6 }
-                ]
-            }
-        ];
+        // Training sessions state (loaded from Supabase sessions table on page load)
+        let trainingSessions = [];
 
-        // Load dynamic email and sync default states
-        window.addEventListener('load', () => {
-            const userEmail = localStorage.getItem('ndure_user_email');
-            if (userEmail) {
-                document.getElementById('user-display-email').textContent = userEmail;
+        // Load real user data from Supabase
+        window.addEventListener('load', async () => {
+            // Guard: bounce to login if there is no active session
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                window.location.href = "login.html";
+                return;
             }
 
-            const storedZones = localStorage.getItem('ndure_hr_zones');
-            if (storedZones) {
-                hrZones = JSON.parse(storedZones);
-            } else {
-                localStorage.setItem('ndure_hr_zones', JSON.stringify(hrZones));
+            document.getElementById('user-display-email').textContent = session.user.email;
+
+            try {
+                const profile = await fetchAthleteProfile();
+                if (profile && profile.hr_zones) {
+                    hrZones = profile.hr_zones;
+                }
+            } catch (err) {
+                console.error("Failed to load athlete profile:", err);
             }
 
-            const storedSessions = localStorage.getItem('ndure_sessions');
-            if (storedSessions) {
-                trainingSessions = JSON.parse(storedSessions);
-            } else {
-                localStorage.setItem('ndure_sessions', JSON.stringify(trainingSessions));
+            try {
+                // Fetch the full session history; the calendar/totals UI filters
+                // client-side across whatever date range is currently in view.
+                trainingSessions = await fetchSessionsByDateRange('1900-01-01', '2999-12-31');
+            } catch (err) {
+                console.error("Failed to load training sessions:", err);
+                trainingSessions = [];
             }
 
             // Sync year/month with current selectedDay
@@ -521,7 +507,7 @@
             });
         }
 
-        function saveHRZonesFromSettings() {
+        async function saveHRZonesFromSettings() {
             const sports = ['run', 'bike', 'swim', 'xc ski', 'backcountry ski'];
             sports.forEach(sport => {
                 hrZones[sport].easy = parseInt(document.getElementById(`hr-input-${sport}-easy`).value) || 120;
@@ -530,10 +516,13 @@
                 hrZones[sport].ap3 = parseInt(document.getElementById(`hr-input-${sport}-ap3`).value) || 170;
             });
 
-            localStorage.setItem('ndure_hr_zones', JSON.stringify(hrZones));
-
-            // Render alerts briefly inside header or with subtle styled message
-            alert("Success: Athletic HR zones updated and synchronized across all workout blocks.");
+            try {
+                await updateAthleteHRZones(hrZones);
+                alert("Success: Athletic HR zones updated and synchronized across all workout blocks.");
+            } catch (err) {
+                console.error("Failed to save HR zones:", err);
+                alert("Error: Could not save HR zones. Please try again.");
+            }
             renderAll();
         }
 
@@ -946,10 +935,15 @@
         }
 
         // --- MANAGE SESSIONS Logic ---
-        function deleteSession(id) {
-            trainingSessions = trainingSessions.filter(s => s.id !== id);
-            localStorage.setItem('ndure_sessions', JSON.stringify(trainingSessions));
-            renderAll();
+        async function deleteSession(id) {
+            try {
+                await deleteTrainingSession(id);
+                trainingSessions = trainingSessions.filter(s => s.id !== id);
+                renderAll();
+            } catch (err) {
+                console.error("Failed to delete session:", err);
+                alert("Error: Could not delete the training session. Please try again.");
+            }
         }
 
         // --- MODERN WORKOUT MODAL BUILDER ACTIONS ---
@@ -1053,7 +1047,7 @@
             targetHRInput.value = hrZones[sport][chosenZone] || 120;
         }
 
-        function saveSessionFromModal() {
+        async function saveSessionFromModal() {
             const sportSelect = document.getElementById('modal-sport-select').value;
             const dateVal = document.getElementById('modal-date-input').value;
             const timeVal = document.getElementById('modal-time-input').value;
@@ -1090,23 +1084,29 @@
                 return;
             }
 
-            const model = {
-                id: Math.random().toString(36).substr(2, 9),
-                sport_type: sportSelect,
-                date: dateVal,
-                time: timeVal,
-                blocks: finalizedBlocks
-            };
+            try {
+                const savedSession = await createTrainingSession({
+                    sport_type: sportSelect,
+                    date: dateVal,
+                    time: timeVal,
+                    blocks: finalizedBlocks
+                });
 
-            trainingSessions.push(model);
-            localStorage.setItem('ndure_sessions', JSON.stringify(trainingSessions));
-
-            closeAddSessionModal();
-            renderAll();
+                trainingSessions.push(savedSession);
+                closeAddSessionModal();
+                renderAll();
+            } catch (err) {
+                console.error("Failed to save session:", err);
+                alert("Error: Could not save the training session. Please try again.");
+            }
         }
 
-        function handleLogout() {
-            localStorage.removeItem('ndure_user_email');
+        async function handleLogout() {
+            try {
+                await signOutAthlete();
+            } catch (err) {
+                console.error("Sign out error:", err);
+            }
             window.location.href = "login.html";
         }
 
@@ -1117,6 +1117,23 @@
             renderTotals();
             renderRightSidebar();
         }
+
+        // Expose handlers used by inline onclick/onchange/onsubmit attributes
+        // (required since this is now a module script, which doesn't
+        // leak declarations onto window automatically)
+        window.switchTab = switchTab;
+        window.setCalendarView = setCalendarView;
+        window.navigateMonth = navigateMonth;
+        window.saveHRZonesFromSettings = saveHRZonesFromSettings;
+        window.triggerAddSessionModal = triggerAddSessionModal;
+        window.closeAddSessionModal = closeAddSessionModal;
+        window.updateModalSportZones = updateModalSportZones;
+        window.addBlockToModalForm = addBlockToModalForm;
+        window.removeBlockFromModalForm = removeBlockFromModalForm;
+        window.changeModalBlockIntensityCode = changeModalBlockIntensityCode;
+        window.saveSessionFromModal = saveSessionFromModal;
+        window.deleteSession = deleteSession;
+        window.handleLogout = handleLogout;
     </script>
 </body>
 </html>
