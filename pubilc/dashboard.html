@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NdurePlan - Training Hub</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #fafafa;
+        }
+        .scrollbar-none::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-none {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="text-zinc-900 bg-zinc-50/50 min-h-screen flex flex-col selection:bg-zinc-200">
+
+    <!-- Header Section -->
+    <header class="border-b border-zinc-200/80 bg-white sticky top-0 z-40 shadow-sm shadow-zinc-100/50">
+        <div class="max-w-[1600px] mx-auto px-6 h-16 flex items-center justify-between">
+            <!-- App Name & Brand -->
+            <div class="flex items-center gap-8">
+                <a href="landing.html" class="flex items-center gap-2.5 font-bold text-lg tracking-tight hover:opacity-90 transition-opacity">
+                    <div class="h-8 w-8 bg-zinc-950 rounded-lg flex items-center justify-center text-white text-sm font-mono leading-none">N</div>
+                    <span>Ndure<span class="text-zinc-500 font-normal">Plan</span></span>
+                </a>
+
+                <!-- Core Navigation Tabs -->
+                <nav class="flex items-center gap-1">
+                    <button onclick="switchTab('plan')" id="tab-btn-plan" class="px-4 py-2 text-sm font-semibold rounded-lg transition-all text-zinc-900 bg-zinc-100">
+                        Plan
+                    </button>
+                    <button onclick="switchTab('settings')" id="tab-btn-settings" class="px-4 py-2 text-sm font-medium rounded-lg transition-all text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50">
+                        Settings
+                    </button>
+                </nav>
+            </div>
+
+            <!-- User Widget / Profile indicator -->
+            <div class="flex items-center gap-4">
+                <div class="hidden sm:flex flex-col items-end text-right">
+                    <span id="user-display-email" class="text-xs font-semibold text-zinc-700">athlete@ndure.com</span>
+                    <span class="text-[9px] font-mono text-zinc-400">ATHLETIC PROFILE Active</span>
+                </div>
+                <button onclick="handleLogout()" class="p-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-all" title="Sign Out">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN APP WRAPPER -->
+    <main class="flex-grow max-w-[1600px] w-full mx-auto px-4 py-6">
+
+        <!-- PLAN VIEW TAB -->
+        <div id="tab-view-plan" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            <!-- LEFT BAR (Calendar & Totals) : LG matches 3-column layout -->
+            <section class="lg:col-span-3 space-y-6">
+                
+                <!-- Modern Mini Interactive Calendar -->
+                <div class="bg-white border border-zinc-200/80 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-zinc-100 pb-3">
+                        <h2 class="text-sm font-semibold text-zinc-800 flex items-center gap-2">
+                            <i data-lucide="calendar" class="w-4 h-4 text-zinc-500"></i>
+                            <span id="calendar-header-month">June 2026</span>
+                        </h2>
+                        <div class="flex items-center gap-1">
+                            <button onclick="navigateMonth(-1)" class="p-1 px-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg border border-zinc-100 transition-all text-xs">&larr;</button>
+                            <button onclick="navigateMonth(1)" class="p-1 px-2 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-50 rounded-lg border border-zinc-100 transition-all text-xs">&rarr;</button>
+                        </div>
+                    </div>
+
+                    <!-- Mini Calendar Grid -->
+                    <div class="grid grid-cols-7 gap-y-2 gap-x-1 text-center text-xs">
+                        <div class="text-zinc-400 font-bold text-[10px] uppercase">Mo</div>
+                        <div class="text-zinc-400 font-bold text-[10px] uppercase">Tu</div>
+                        <div class="text-zinc-400 font-bold text-[10px] uppercase">We</div>
+                        <div class="text-zinc-400 font-bold text-[10px] uppercase">Th</div>
+                        <div class="text-zinc-400 font-bold text-[10px] uppercase">Fr</div>
+                        <div class="text-zinc-400 font-bold text-[10px] uppercase">Sa</div>
+                        <div class="text-zinc-400 font-bold text-[10px] uppercase">Su</div>
+                        <div id="calendar-days-container" class="contents">
+                            <!-- Filled dynamically by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Session Totals for Current Period -->
+                <div class="bg-white border border-zinc-200/80 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div class="border-b border-zinc-100 pb-3 flex items-center justify-between">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-zinc-400">Selected Week Goals</h3>
+                        <span class="text-[10px] font-mono bg-zinc-100 text-zinc-600 rounded px-1.5 py-0.5">Totals</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 gap-3" id="totals-container">
+                        <!-- Filled template fields dynamically via JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- MIDDLE BAR (Week / Month view + adding session prompt) -->
+            <section class="lg:col-span-6 space-y-6">
+                <!-- Session Dashboard Bar -->
+                <div class="bg-white border border-zinc-200/80 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-zinc-100 pb-3 flex-wrap gap-2">
+                        <div class="space-y-0.5">
+                            <h2 class="text-lg font-bold text-zinc-900 flex items-center gap-2">
+                                <span id="middle-view-header">Workouts Log</span>
+                            </h2>
+                            <p class="text-xs text-zinc-400 font-light">Schedule training sessions and monitor intensities</p>
+                        </div>
+                        
+                        <!-- Week/Month view Option Toggles -->
+                        <div class="flex items-center gap-1 bg-zinc-100/80 border border-zinc-200/40 p-1 rounded-xl">
+                            <button onclick="setCalendarView('week')" id="btn-view-week" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-zinc-900 shadow-sm transition-all">
+                                Week View
+                            </button>
+                            <button onclick="setCalendarView('month')" id="btn-view-month" class="px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-500 hover:text-zinc-900 transition-all">
+                                Month View
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Inner Workout Grid depending on week/month active -->
+                    <div class="space-y-3" id="sessions-list-container">
+                        <!-- Filled by JS -->
+                    </div>
+
+                    <!-- Add Session Fast button -->
+                    <button onclick="triggerAddSessionModal()" class="w-full py-3.5 border-2 border-dashed border-zinc-200 hover:border-zinc-400 text-zinc-500 hover:text-zinc-950 rounded-xl flex items-center justify-center gap-2 text-sm font-medium transition-all group">
+                        <i data-lucide="plus-circle" class="w-4 h-4 group-hover:scale-110 transition-transform"></i>
+                        <span>Plan New Session on Selected Day</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- RIGHT BAR (Active Details & Workout Builder) -->
+            <section class="lg:col-span-3 space-y-6">
+                <!-- Day Details & Workout Block Builder -->
+                <div class="bg-white border border-zinc-200/80 rounded-2xl p-5 shadow-sm space-y-4" id="right-panel">
+                    <div class="border-b border-zinc-100 pb-3">
+                        <p class="text-[10px] uppercase font-bold tracking-wider text-zinc-400" id="right-selected-day-formatted">Selected Day</p>
+                        <h3 class="text-base font-bold text-zinc-900" id="right-selected-date-title">June 16, 2026</h3>
+                    </div>
+
+                    <!-- Active Sessions Planned Lists -->
+                    <div class="space-y-4">
+                        <h4 class="text-xs font-bold text-zinc-500 uppercase tracking-widest">Sessions Planned</h4>
+                        <div id="right-sessions-list" class="space-y-3">
+                            <!-- Filled dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+
+        <!-- SETTINGS TAB (Heart Rate Zone Table) -->
+        <div id="tab-view-settings" class="hidden max-w-4xl mx-auto bg-white border border-zinc-200/80 rounded-2xl p-6 md:p-8 shadow-sm space-y-8">
+            <div class="space-y-1.5 border-b border-zinc-100 pb-4">
+                <h2 class="text-xl font-bold text-zinc-900">Custom Heart Rate Zones</h2>
+                <p class="text-xs text-zinc-500 font-light">Modify your baseline beats-per-minute (BPM) settings for each athletic discipline. These define standard ranges used within the workout builder blocks.</p>
+            </div>
+
+            <!-- Sports HR table -->
+            <div class="overflow-x-auto rounded-xl border border-zinc-100">
+                <table class="w-full text-left text-sm border-collapse">
+                    <thead>
+                        <tr class="bg-zinc-50 text-zinc-400 font-bold uppercase text-[10px] tracking-wider border-b border-zinc-100">
+                            <th class="p-4">Sport / Discipline</th>
+                            <th class="p-4">Easy (Aerobic/Recovery)</th>
+                            <th class="p-4">AP1 (Aerobic Threshold)</th>
+                            <th class="p-4">AP2 (Aerobic Power / Int)</th>
+                            <th class="p-4">AP3 (Anaerobic Capacity)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="settings-zones-tbody" class="divide-y divide-zinc-100 font-mono text-zinc-700">
+                        <!-- Filled dynamically by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Save settings action -->
+            <div class="flex items-center justify-between pt-4 border-t border-zinc-105">
+                <p class="text-xs text-zinc-450 font-light max-w-lg">Target values within training block inputs automatically sync as customized options from this master matrix.</p>
+                <button onclick="saveHRZonesFromSettings()" class="bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-sm flex items-center gap-2">
+                    <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                    Save Zones Matrix
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- NEW SESSION / WORKOUT BUILDER MODAL -->
+    <div id="add-session-modal" class="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div class="bg-white border border-zinc-200 shadow-2xl rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
+            <!-- Modal Head -->
+            <div class="p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+                <div class="space-y-0.5">
+                    <h3 class="font-bold text-zinc-850">Plan Training Session</h3>
+                    <p class="text-xs text-zinc-450" id="modal-date-picker-label">Schedule blocks and goals</p>
+                </div>
+                <button onclick="closeAddSessionModal()" class="p-1 px-2 rounded-lg border hover:bg-zinc-100">&times;</button>
+            </div>
+
+            <!-- Form -->
+            <div class="p-6 space-y-6 flex-grow">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <!-- Sport Type selection -->
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">Sport</label>
+                        <select id="modal-sport-select" onchange="updateModalSportZones()" class="w-full text-xs p-2.5 border border-zinc-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-900">
+                            <option value="run">Run 🏃</option>
+                            <option value="bike">Bike 🚴</option>
+                            <option value="swim">Swim 🏊</option>
+                            <option value="xc ski">XC Ski 🎿</option>
+                            <option value="backcountry ski">Backcountry Ski ⛷️</option>
+                        </select>
+                    </div>
+
+                    <!-- Date picker -->
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">Date</label>
+                        <input type="date" id="modal-date-input" class="w-full text-xs p-2.5 border border-zinc-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-900">
+                    </div>
+
+                    <!-- Time picker -->
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">Start Time</label>
+                        <input type="time" id="modal-time-input" value="08:00" class="w-full text-xs p-2.5 border border-zinc-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-900">
+                    </div>
+                </div>
+
+                <!-- Workout block builder area -->
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between border-b pb-2">
+                        <h4 class="text-xs font-bold text-zinc-700 uppercase tracking-wider">Workout Blocks</h4>
+                        <button type="button" onclick="addBlockToModalForm()" class="text-[10px] font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-850 px-2.5 py-1 rounded-md transition-all flex items-center gap-1">
+                            <i data-lucide="plus" class="w-2.5 h-2.5"></i> Add Block
+                        </button>
+                    </div>
+
+                    <!-- Nested Blocks List inside Modal Form -->
+                    <div class="space-y-3" id="modal-blocks-container">
+                        <!-- Instantiated blocks populated via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Foot -->
+            <div class="p-4 border-t border-zinc-100 bg-zinc-50 flex items-center justify-end gap-3 rounded-b-2xl">
+                <button onclick="closeAddSessionModal()" class="px-4 py-2 hover:bg-zinc-200/70 border border-zinc-200 text-zinc-650 text-xs font-semibold rounded-lg">Cancel</button>
+                <button onclick="saveSessionFromModal()" class="px-5 py-2 bg-zinc-950 text-white hover:bg-zinc-800 text-xs font-semibold rounded-lg">Add Training Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Details Block Panel Template helpers -->
+    <div id="workout-details-drawer" class="hidden"></div>
+
+    <!-- Footer -->
+    <footer class="border-t border-zinc-200/40 bg-white py-6 mt-12">
+        <div class="max-w-[1600px] mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-zinc-400 font-light">
+            <p>&copy; 2026 NdurePlan. Minimalist athletical planner.</p>
+            <p class="font-mono text-[10px]">SUPABASE & RLS READY CLIENT INTEGRATION</p>
+        </div>
+    </footer>
+
+
+    <script>
+        // CLIENT STATE MANAGEMENT
+        let activeTab = 'plan';
+        let calendarView = 'week'; // 'week' or 'month'
+        let selectedDate = new Date(2026, 5, 16); // June 16, 2026 (Mon/Tue range)
+        let activeMonthYear = { month: 5, year: 2026 }; // June 2026
+
+        // HR Zones Matrix state (defaults to localStorage if exists, else initial seed)
+        let hrZones = {
+            "run": {"easy": 120, "ap1": 135, "ap2": 150, "ap3": 170},
+            "bike": {"easy": 110, "ap1": 125, "ap2": 140, "ap3": 155},
+            "swim": {"easy": 115, "ap1": 130, "ap2": 145, "ap3": 160},
+            "xc ski": {"easy": 118, "ap1": 133, "ap2": 148, "ap3": 165},
+            "backcountry ski": {"easy": 115, "ap1": 128, "ap2": 142, "ap3": 158}
+        };
+
+        // Saved sessions mock state
+        let trainingSessions = [
+            {
+                id: '1',
+                sport_type: 'run',
+                date: '2026-06-15',
+                time: '08:30',
+                blocks: [
+                    { type: 'Warmup', intensity: 'easy', target_hr: 120, time_min: 15, distance_km: null },
+                    { type: 'Interval Set 1', intensity: 'ap2', target_hr: 150, time_min: 20, distance_km: 4.0 },
+                    { type: 'Cooldown', intensity: 'easy', target_hr: 115, time_min: 10, distance_km: null }
+                ]
+            },
+            {
+                id: '2',
+                sport_type: 'bike',
+                date: '2026-06-16',
+                time: '14:00',
+                blocks: [
+                    { type: 'Base endurance', intensity: 'ap1', target_hr: 125, time_min: 90, distance_km: 38.0 },
+                    { type: 'Short spin', intensity: 'easy', target_hr: 105, time_min: 30, distance_km: 10.0 }
+                ]
+            },
+            {
+                id: '3',
+                sport_type: 'swim',
+                date: '2026-06-17',
+                time: '18:00',
+                blocks: [
+                    { type: 'Warmup', intensity: 'easy', target_hr: 110, time_min: 10, distance_km: 0.5 },
+                    { type: 'Main sets', intensity: 'ap3', target_hr: 145, time_min: 30, distance_km: 1.5 },
+                    { type: 'Recovery', intensity: 'easy', target_hr: 112, time_min: 15, distance_km: 0.6 }
+                ]
+            }
+        ];
+
+        // Load dynamic email and sync default states
+        window.addEventListener('load', () => {
+            const userEmail = localStorage.getItem('ndure_user_email');
+            if (userEmail) {
+                document.getElementById('user-display-email').textContent = userEmail;
+            }
+
+            const storedZones = localStorage.getItem('ndure_hr_zones');
+            if (storedZones) {
+                hrZones = JSON.parse(storedZones);
+            } else {
+                localStorage.setItem('ndure_hr_zones', JSON.stringify(hrZones));
+            }
+
+            const storedSessions = localStorage.getItem('ndure_sessions');
+            if (storedSessions) {
+                trainingSessions = JSON.parse(storedSessions);
+            } else {
+                localStorage.setItem('ndure_sessions', JSON.stringify(trainingSessions));
+            }
+
+            // Sync year/month with current selectedDay
+            activeMonthYear.year = selectedDate.getFullYear();
+            activeMonthYear.month = selectedDate.getMonth();
+
+            renderAll();
+        });
+
+        // TABS NAVIGATION (Plan / Settings view switches)
+        function switchTab(tab) {
+            activeTab = tab;
+            const tabBtnPlan = document.getElementById('tab-btn-plan');
+            const tabBtnSettings = document.getElementById('tab-btn-settings');
+            const viewPlan = document.getElementById('tab-view-plan');
+            const viewSettings = document.getElementById('tab-view-settings');
+
+            if (tab === 'plan') {
+                tabBtnPlan.className = "px-4 py-2 text-sm font-semibold rounded-lg transition-all text-zinc-900 bg-zinc-100";
+                tabBtnSettings.className = "px-4 py-2 text-sm font-medium rounded-lg transition-all text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50";
+                viewPlan.classList.remove('hidden');
+                viewSettings.classList.add('hidden');
+            } else {
+                tabBtnSettings.className = "px-4 py-2 text-sm font-semibold rounded-lg transition-all text-zinc-900 bg-zinc-100";
+                tabBtnPlan.className = "px-4 py-2 text-sm font-medium rounded-lg transition-all text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50";
+                viewSettings.classList.remove('hidden');
+                viewPlan.classList.add('hidden');
+                renderSettingsHRZones();
+            }
+        }
+
+        function setCalendarView(view) {
+            calendarView = view;
+            const btnWeek = document.getElementById('btn-view-week');
+            const btnMonth = document.getElementById('btn-view-month');
+
+            if (view === 'week') {
+                btnWeek.className = "px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-zinc-900 shadow-sm transition-all";
+                btnMonth.className = "px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-500 hover:text-zinc-900 transition-all";
+            } else {
+                btnMonth.className = "px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-zinc-900 shadow-sm transition-all";
+                btnWeek.className = "px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-500 hover:text-zinc-900 transition-all";
+            }
+            renderMiddleSessionsLog();
+            renderTotals();
+        }
+
+        // --- CALENDAR GENERATION ---
+        function navigateMonth(direction) {
+            activeMonthYear.month += direction;
+            if (activeMonthYear.month < 0) {
+                activeMonthYear.month = 11;
+                activeMonthYear.year -= 1;
+            } else if (activeMonthYear.month > 11) {
+                activeMonthYear.month = 0;
+                activeMonthYear.year += 1;
+            }
+            renderCalendar();
+        }
+
+        function selectCalendarDate(year, month, day) {
+            selectedDate = new Date(year, month, day);
+            renderCalendar();
+            renderRightSidebar();
+            renderTotals();
+            if (calendarView === 'week') {
+                renderMiddleSessionsLog();
+            }
+        }
+
+        function renderCalendar() {
+            const daysContainer = document.getElementById('calendar-days-container');
+            daysContainer.innerHTML = '';
+
+            const firstDayOfMonth = new Date(activeMonthYear.year, activeMonthYear.month, 1);
+            // Get week day number (0 is Sun, convert so Mo is 0, Tu is 1 ... Su is 6)
+            let startDayCode = firstDayOfMonth.getDay() - 1;
+            if (startDayCode === -1) startDayCode = 6;
+
+            const daysInMonth = new Date(activeMonthYear.year, activeMonthYear.month + 1, 0).getDate();
+            
+            // Set header label
+            const monthsNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            document.getElementById('calendar-header-month').textContent = `${monthsNames[activeMonthYear.month]} ${activeMonthYear.year}`;
+
+            // Fill empty spacer days
+            for (let i = 0; i < startDayCode; i++) {
+                const spacer = document.createElement('div');
+                spacer.className = "text-zinc-300 pointer-events-none py-1.5";
+                spacer.innerHTML = "&nbsp;";
+                daysContainer.appendChild(spacer);
+            }
+
+            // Fill active days
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayDiv = document.createElement('button');
+                dayDiv.type = 'button';
+                
+                const isSelected = selectedDate.getDate() === day && selectedDate.getMonth() === activeMonthYear.month && selectedDate.getFullYear() === activeMonthYear.year;
+                const hasSessions = trainingSessions.some(s => {
+                    const dateObj = new Date(s.date);
+                    return dateObj.getDate() === day && dateObj.getMonth() === activeMonthYear.month && dateObj.getFullYear() === activeMonthYear.year;
+                });
+
+                let baseStyles = "w-7 h-7 mx-auto flex items-center justify-center rounded-full text-xs transition-all relative font-medium ";
+                if (isSelected) {
+                    baseStyles += "bg-zinc-950 text-white font-bold";
+                } else {
+                    baseStyles += "text-zinc-800 hover:bg-zinc-200/50 ";
+                }
+
+                dayDiv.className = baseStyles;
+                dayDiv.textContent = day;
+                dayDiv.onclick = () => selectCalendarDate(activeMonthYear.year, activeMonthYear.month, day);
+
+                // Add small bubble if day has sessions
+                if (hasSessions && !isSelected) {
+                    const indicator = document.createElement('span');
+                    indicator.className = "absolute bottom-0 w-1 h-1 rounded-full bg-indigo-500";
+                    dayDiv.appendChild(indicator);
+                }
+
+                daysContainer.appendChild(dayDiv);
+            }
+        }
+
+        // --- SETTINGS (Zones Table) ---
+        function renderSettingsHRZones() {
+            const tbody = document.getElementById('settings-zones-tbody');
+            tbody.innerHTML = '';
+
+            const sports = ['run', 'bike', 'swim', 'xc ski', 'backcountry ski'];
+            sports.forEach(sport => {
+                const z = hrZones[sport];
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-zinc-50/50 transition-colors";
+
+                // Sport Title capitalize
+                const capSport = sport.charAt(0).toUpperCase() + sport.slice(1);
+
+                tr.innerHTML = `
+                    <td class="p-4 font-sans font-medium text-zinc-900">${capSport}</td>
+                    <td class="p-2">
+                        <input type="number" id="hr-input-${sport}-easy" value="${z.easy}" class="w-20 p-2 font-mono text-center border border-zinc-200 rounded-lg bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900 transition-all">
+                    </td>
+                    <td class="p-2">
+                        <input type="number" id="hr-input-${sport}-ap1" value="${z.ap1}" class="w-20 p-2 font-mono text-center border border-zinc-200 rounded-lg bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900 transition-all">
+                    </td>
+                    <td class="p-2">
+                        <input type="number" id="hr-input-${sport}-ap2" value="${z.ap2}" class="w-20 p-2 font-mono text-center border border-zinc-200 rounded-lg bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900 transition-all">
+                    </td>
+                    <td class="p-2">
+                        <input type="number" id="hr-input-${sport}-ap3" value="${z.ap3}" class="w-20 p-2 font-mono text-center border border-zinc-200 rounded-lg bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900 transition-all">
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function saveHRZonesFromSettings() {
+            const sports = ['run', 'bike', 'swim', 'xc ski', 'backcountry ski'];
+            sports.forEach(sport => {
+                hrZones[sport].easy = parseInt(document.getElementById(`hr-input-${sport}-easy`).value) || 120;
+                hrZones[sport].ap1 = parseInt(document.getElementById(`hr-input-${sport}-ap1`).value) || 135;
+                hrZones[sport].ap2 = parseInt(document.getElementById(`hr-input-${sport}-ap2`).value) || 150;
+                hrZones[sport].ap3 = parseInt(document.getElementById(`hr-input-${sport}-ap3`).value) || 170;
+            });
+
+            localStorage.setItem('ndure_hr_zones', JSON.stringify(hrZones));
+            
+            // Render alerts briefly inside header or with subtle styled message
+            alert("Success: Athletic HR zones updated and synchronized across all workout blocks.");
+            renderAll();
+        }
+
+        // --- MIDDLE BAR LOG DRAWER ---
+        function renderMiddleSessionsLog() {
+            const container = document.getElementById('sessions-list-container');
+            container.innerHTML = '';
+
+            if (calendarView === 'week') {
+                container.className = "grid grid-cols-2 sm:grid-cols-7 gap-2.5 pt-2";
+
+                // Get the start of the week for chosen selectedDate (Monday first)
+                const curr = new Date(selectedDate);
+                const day = curr.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
+                const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
+                const startOfWeek = new Date(curr.setDate(diff));
+
+                // Render week header range label
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(endOfWeek.getDate() + 6);
+                
+                const optFormat = { month: 'short', day: 'numeric' };
+                document.getElementById('middle-view-header').textContent = `Workouts: Week of ${startOfWeek.toLocaleDateString('en-US', optFormat)} - ${endOfWeek.toLocaleDateString('en-US', optFormat)}`;
+
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date(startOfWeek);
+                    d.setDate(startOfWeek.getDate() + i);
+                    
+                    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                    const dayNum = d.getDate();
+                    const dayStr = d.toISOString().split('T')[0];
+                    const isSelected = d.toDateString() === selectedDate.toDateString();
+                    
+                    const daySessions = trainingSessions.filter(s => s.date === dayStr);
+
+                    // Create Column Element
+                    const col = document.createElement('div');
+                    let colClass = "flex flex-col gap-2 p-2.5 rounded-xl border transition-all cursor-pointer h-full min-h-[220px] ";
+                    if (isSelected) {
+                        colClass += "bg-zinc-50 border-zinc-950 ring-1 ring-zinc-950/20";
+                    } else {
+                        colClass += "bg-white border-zinc-100 hover:border-zinc-300";
+                    }
+                    col.className = colClass;
+                    col.onclick = () => selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
+
+                    const colHeader = document.createElement('div');
+                    colHeader.className = "text-center pb-2 border-b border-zinc-100/50 sticky top-0 bg-inherit z-10";
+                    colHeader.innerHTML = `
+                        <p class="text-[9px] font-bold ${isSelected ? 'text-zinc-950' : 'text-zinc-400'} uppercase tracking-wider">${dayName}</p>
+                        <p class="text-sm font-extrabold mt-0.5 ${isSelected ? 'text-zinc-950' : 'text-zinc-800'}">${dayNum}</p>
+                    `;
+                    col.appendChild(colHeader);
+
+                    const sessionsWrapper = document.createElement('div');
+                    sessionsWrapper.className = "flex-grow flex flex-col gap-1.5 justify-between min-h-[120px]";
+                    
+                    if (daySessions.length === 0) {
+                        // Empty slot to quick-add
+                        const addCard = document.createElement('div');
+                        addCard.className = "flex-grow flex items-center justify-center border border-dashed border-zinc-200 hover:border-zinc-400 rounded-lg h-24 hover:bg-zinc-50/50 transition-all cursor-pointer text-zinc-300 hover:text-zinc-500";
+                        addCard.title = `Add workout for ${dayName} ${dayNum}`;
+                        addCard.onclick = (e) => {
+                            e.stopPropagation();
+                            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
+                            triggerAddSessionModal();
+                        };
+                        addCard.innerHTML = `<span class="text-sm font-light">+</span>`;
+                        sessionsWrapper.appendChild(addCard);
+                    } else {
+                        const sessionsListInner = document.createElement('div');
+                        sessionsListInner.className = "space-y-1.5 flex-grow";
+
+                        daySessions.forEach(s => {
+                            const totalDuration = s.blocks.reduce((acc, b) => acc + (parseInt(b.time_min) || 0), 0);
+                            
+                            let sportIcon = '👟';
+                            let iconColor = 'border-emerald-100 bg-emerald-50 text-emerald-800';
+                            if (s.sport_type === 'run') { sportIcon = '👟'; iconColor = 'border-emerald-100 bg-emerald-50 text-emerald-800'; }
+                            else if (s.sport_type === 'bike') { sportIcon = '🚲'; iconColor = 'border-blue-100 bg-blue-50 text-blue-800'; }
+                            else if (s.sport_type === 'swim') { sportIcon = '🏊'; iconColor = 'border-sky-100 bg-sky-50 text-sky-800'; }
+                            else if (s.sport_type === 'xc ski') { sportIcon = '🎿'; iconColor = 'border-rose-100 bg-rose-50 text-rose-800'; }
+                            else if (s.sport_type === 'backcountry ski') { sportIcon = '⛷️'; iconColor = 'border-amber-100 bg-amber-50 text-amber-800'; }
+
+                            const sessCard = document.createElement('div');
+                            sessCard.className = `p-2 rounded-lg border text-[10px] leading-snug ${iconColor} hover:shadow-sm transition-all`;
+                            sessCard.innerHTML = `
+                                <div class="flex items-center justify-between font-bold">
+                                    <span class="uppercase tracking-wider text-[8px]">${s.sport_type.split(' ')[0]}</span>
+                                    <span>${sportIcon}</span>
+                                </div>
+                                <div class="mt-1 font-extrabold text-zinc-900">${totalDuration}m</div>
+                                <div class="text-[8px] opacity-75 mt-0.5">${s.time}</div>
+                            `;
+                            sessionsListInner.appendChild(sessCard);
+                        });
+                        sessionsWrapper.appendChild(sessionsListInner);
+
+                        // Micro add button below workouts
+                        const quickAddBtn = document.createElement('button');
+                        quickAddBtn.type = 'button';
+                        quickAddBtn.className = "w-full py-1 text-[8px] text-zinc-400 hover:text-zinc-800 border border-dashed border-zinc-200 hover:border-zinc-300 rounded-md hover:bg-zinc-50 transition-all font-mono";
+                        quickAddBtn.textContent = "+ WORKOUT";
+                        quickAddBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
+                            triggerAddSessionModal();
+                        };
+                        sessionsWrapper.appendChild(quickAddBtn);
+                    }
+
+                    col.appendChild(sessionsWrapper);
+                    container.appendChild(col);
+                }
+            } else if (calendarView === 'month') {
+                // Header Label
+                const monthsNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                document.getElementById('middle-view-header').textContent = `Workouts: ${monthsNames[activeMonthYear.month]} ${activeMonthYear.year}`;
+
+                // Month Calendar Grid Container configuration
+                container.className = "flex flex-col gap-2 pt-2";
+
+                // Day of week subheaders
+                const dayHeaderGrid = document.createElement('div');
+                dayHeaderGrid.className = "grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-zinc-400 uppercase tracking-wider py-1 border-b border-zinc-100/60";
+                const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+                daysOfWeek.forEach(day => {
+                    const cell = document.createElement('div');
+                    cell.textContent = day;
+                    dayHeaderGrid.appendChild(cell);
+                });
+                container.appendChild(dayHeaderGrid);
+
+                const gridContainer = document.createElement('div');
+                gridContainer.className = "grid grid-cols-7 gap-2 bg-zinc-50 p-2 rounded-2xl border border-zinc-200/50";
+
+                // We compute the spacer days
+                const firstDayOfMonth = new Date(activeMonthYear.year, activeMonthYear.month, 1);
+                let startDayCode = firstDayOfMonth.getDay() - 1; // Convert so Mo is 0, Tu is 1 ... Su is 6
+                if (startDayCode === -1) startDayCode = 6;
+
+                const daysInMonth = new Date(activeMonthYear.year, activeMonthYear.month + 1, 0).getDate();
+
+                // Spacer boxes
+                for (let i = 0; i < startDayCode; i++) {
+                    const blankCell = document.createElement('div');
+                    blankCell.className = "bg-white/40 border border-transparent rounded-xl h-20 min-h-[75px] opacity-20";
+                    gridContainer.appendChild(blankCell);
+                }
+
+                // Month cells
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const cellDate = new Date(activeMonthYear.year, activeMonthYear.month, day);
+                    const cellDateStr = cellDate.toISOString().split('T')[0];
+                    const daySessions = trainingSessions.filter(s => s.date === cellDateStr);
+                    const isSelected = cellDate.toDateString() === selectedDate.toDateString();
+
+                    const dayCell = document.createElement('div');
+                    let cellClass = "bg-white border rounded-xl p-2 flex flex-col justify-between cursor-pointer hover:border-zinc-300 hover:shadow-xs transition-all h-20 min-h-[75px] ";
+                    if (isSelected) {
+                        cellClass += "border-zinc-950 ring-1 ring-zinc-950/20 shadow-sm";
+                    } else {
+                        cellClass += "border-zinc-100";
+                    }
+                    dayCell.className = cellClass;
+                    dayCell.onclick = () => selectCalendarDate(activeMonthYear.year, activeMonthYear.month, day);
+
+                    // Cell Top bar (Day number + optional "+" quick add)
+                    const cellTop = document.createElement('div');
+                    cellTop.className = "flex justify-between items-center";
+                    
+                    const dayNumSpan = document.createElement('span');
+                    dayNumSpan.className = `text-[10px] font-mono font-extrabold ${isSelected ? 'text-zinc-950' : 'text-zinc-500'}`;
+                    dayNumSpan.textContent = day;
+                    cellTop.appendChild(dayNumSpan);
+
+                    const quickAddBtn = document.createElement('span');
+                    quickAddBtn.className = "text-[9px] text-zinc-350 hover:text-zinc-950 font-bold px-1 transition-colors";
+                    quickAddBtn.textContent = "+";
+                    quickAddBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        selectCalendarDate(activeMonthYear.year, activeMonthYear.month, day);
+                        triggerAddSessionModal();
+                    };
+                    cellTop.appendChild(quickAddBtn);
+
+                    dayCell.appendChild(cellTop);
+
+                    // Sessions rendering zone
+                    const badgeContainer = document.createElement('div');
+                    badgeContainer.className = "flex-grow flex flex-col justify-end gap-1 overflow-hidden mt-1";
+
+                    if (daySessions.length > 0) {
+                        daySessions.slice(0, 2).forEach(s => {
+                            const totalDuration = s.blocks.reduce((acc, b) => acc + (parseInt(b.time_min) || 0), 0);
+                            
+                            let badgeStyle = "bg-zinc-100 text-zinc-700";
+                            if (s.sport_type === 'run') badgeStyle = "bg-emerald-50 text-emerald-800 border-emerald-100";
+                            else if (s.sport_type === 'bike') badgeStyle = "bg-blue-50 text-blue-800 border-blue-100";
+                            else if (s.sport_type === 'swim') badgeStyle = "bg-sky-50 text-sky-800 border-sky-100";
+                            else if (s.sport_type === 'xc ski') badgeStyle = "bg-rose-50 text-rose-800 border-rose-100";
+                            else if (s.sport_type === 'backcountry ski') badgeStyle = "bg-amber-50 text-amber-800 border-amber-100";
+
+                            const badge = document.createElement('div');
+                            badge.className = `text-[7px] font-bold py-0.5 px-1 rounded border leading-tight truncate tracking-tight ${badgeStyle}`;
+                            badge.textContent = `${s.sport_type.split(' ')[0].toUpperCase()} ${totalDuration}m`;
+                            badgeContainer.appendChild(badge);
+                        });
+
+                        if (daySessions.length > 2) {
+                            const bonus = document.createElement('div');
+                            bonus.className = "text-[7px] text-zinc-400 font-semibold self-end";
+                            bonus.textContent = `+${daySessions.length - 2} more`;
+                            badgeContainer.appendChild(bonus);
+                        }
+                    } else {
+                        // Ambient empty cell spacer
+                        const span = document.createElement('span');
+                        span.className = "h-3";
+                        badgeContainer.appendChild(span);
+                    }
+
+                    dayCell.appendChild(badgeContainer);
+                    gridContainer.appendChild(dayCell);
+                }
+
+                container.appendChild(gridContainer);
+            }
+
+            lucide.createIcons();
+        }
+
+        // --- TOTALS CALCULATOR ---
+        function renderTotals() {
+            const container = document.getElementById('totals-container');
+            container.innerHTML = '';
+
+            let filterRangeTitle = "This Week";
+            let totalMin = 0;
+            let sportsDist = { 'run': 0, 'bike': 0, 'swim': 0, 'xc ski': 0, 'backcountry ski': 0 };
+            let sportMinutes = { 'run': 0, 'bike': 0, 'swim': 0, 'xc ski': 0, 'backcountry ski': 0 };
+
+            let listToCalc = [];
+            if (calendarView === 'week') {
+                const curr = new Date(selectedDate);
+                const day = curr.getDay();
+                const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
+                const startOfWeek = new Date(curr.setDate(diff));
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(endOfWeek.getDate() + 6);
+
+                trainingSessions.forEach(s => {
+                    const sd = new Date(s.date);
+                    if (sd >= startOfWeek && sd <= endOfWeek) listToCalc.push(s);
+                });
+            } else {
+                filterRangeTitle = "This Month";
+                trainingSessions.forEach(s => {
+                    const sd = new Date(s.date);
+                    if (sd.getMonth() === activeMonthYear.month && sd.getFullYear() === activeMonthYear.year) {
+                        listToCalc.push(s);
+                    }
+                });
+            }
+
+            listToCalc.forEach(s => {
+                s.blocks.forEach(b => {
+                    totalMin += (parseInt(b.time_min) || 0);
+                    if (b.distance_km) {
+                        sportsDist[s.sport_type] += parseFloat(b.distance_km);
+                    }
+                    sportMinutes[s.sport_type] += (parseInt(b.time_min) || 0);
+                });
+            });
+
+            // Put a header total inside
+            const totalHoursDec = (totalMin / 60).toFixed(1);
+            
+            const headDiv = document.createElement('div');
+            headDiv.className = "text-center py-3 bg-zinc-50 border border-zinc-100 rounded-xl space-y-1 mb-2";
+            headDiv.innerHTML = `
+                <div class="text-[11px] text-zinc-400 font-bold uppercase tracking-wider">Accumulated Hours</div>
+                <div class="text-2xl font-mono font-bold text-zinc-800">${totalHoursDec} hrs</div>
+                <div class="text-[10px] text-zinc-400 font-light">${totalMin} mins total workout span</div>
+            `;
+            container.appendChild(headDiv);
+
+            // Add breakdown per sport
+            const sportsList = ['run', 'bike', 'swim', 'xc ski', 'backcountry ski'];
+            sportsList.forEach(sport => {
+                const dist = sportsDist[sport];
+                const mins = sportMinutes[sport];
+                
+                if (mins > 0 || dist > 0) {
+                    const card = document.createElement('div');
+                    card.className = "flex items-center justify-between text-xs p-2.5 rounded-lg border border-zinc-100 bg-white/70 shadow-sm";
+                    
+                    let sportLabel = sport.charAt(0).toUpperCase() + sport.slice(1);
+                    card.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full ${sport === 'run' ? 'bg-emerald-400' : sport === 'bike' ? 'bg-blue-400' : 'bg-orange-400'}"></span>
+                            <span class="font-medium text-zinc-700">${sportLabel}</span>
+                        </div>
+                        <div class="text-right font-mono text-zinc-800 space-y-0.5">
+                            <div class="font-bold">${mins} mins</div>
+                            ${dist ? `<div class="text-[9px] text-zinc-400">${dist.toFixed(1)} km</div>` : ''}
+                        </div>
+                    `;
+                    container.appendChild(card);
+                }
+            });
+
+            if (totalMin === 0) {
+                const empty = document.createElement('div');
+                empty.className = "text-center text-[11px] text-zinc-400 font-light py-4";
+                empty.textContent = "Log workout blocks to see targets totals calculation.";
+                container.appendChild(empty);
+            }
+        }
+
+        // --- RIGHT SIDEBAR ATTAINMENT DISPLAY & WORKOUT BUILDER ---
+        function renderRightSidebar() {
+            const dateTitle = document.getElementById('right-selected-date-title');
+            const formattedHeader = document.getElementById('right-selected-day-formatted');
+            const daySessionsList = document.getElementById('right-sessions-list');
+
+            formattedHeader.textContent = selectedDate.toLocaleDateString('en-US', { weekday: 'upper' });
+            dateTitle.textContent = selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+            daySessionsList.innerHTML = '';
+
+            // Filter sessions for matching select date
+            const targetDateStr = selectedDate.toISOString().split('T')[0];
+            const matched = trainingSessions.filter(s => s.date === targetDateStr);
+
+            if (matched.length === 0) {
+                daySessionsList.innerHTML = `
+                    <div class="py-8 text-center text-zinc-400/80 space-y-2">
+                        <i data-lucide="frown" class="w-8 h-8 stroke-1 mx-auto text-zinc-300"></i>
+                        <p class="text-xs">No athletic sessions configured for today.</p>
+                        <p class="text-[10px] font-light">Structure your warmup and intervals using the builder below.</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            matched.forEach((s, idx) => {
+                const blockBox = document.createElement('div');
+                blockBox.className = "p-4 border border-zinc-200 bg-zinc-50/50 rounded-xl space-y-3 relative group";
+
+                // Delete Session Button inside card
+                blockBox.innerHTML = `
+                    <div class="flex items-center justify-between border-b border-zinc-100 pb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-zinc-800 capitalize">${s.sport_type} Session</span>
+                            <span class="text-[9px] font-mono font-medium text-zinc-400">${s.time}</span>
+                        </div>
+                        <button onclick="deleteSession('${s.id}')" class="text-zinc-400 hover:text-red-500 hover:bg-zinc-100 p-1 rounded transition-colors" title="Delete Session">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-2">
+                `;
+
+                // Calculate Pace logic and append blocks
+                s.blocks.forEach(b => {
+                    const blockDiv = document.createElement('div');
+                    blockDiv.className = "bg-white p-2.5 rounded-lg border border-zinc-100 text-xs space-y-1.5 shadow-sm";
+
+                    // Compute Target Pace if both time and distance is present
+                    let paceFormatted = '';
+                    if (b.time_min && b.distance_km) {
+                        const totalMins = parseFloat(b.time_min);
+                        const distKm = parseFloat(b.distance_km);
+                        if (distKm > 0) {
+                            const decimalPace = totalMins / distKm;
+                            const paceMin = Math.floor(decimalPace);
+                            const paceSec = Math.round((decimalPace - paceMin) * 60);
+                            paceFormatted = `Pace: ${paceMin}:${paceSec < 10 ? '0' + paceSec : paceSec} /km`;
+                        }
+                    }
+
+                    // Map intensity codes to colors
+                    let zoneBg = "bg-zinc-150 text-zinc-700";
+                    if (b.intensity === "easy") zoneBg = "bg-emerald-50 text-emerald-700 border border-emerald-200/50";
+                    else if (b.intensity === "ap1") zoneBg = "bg-blue-50 text-blue-700 border border-blue-200/50";
+                    else if (b.intensity === "ap2") zoneBg = "bg-yellow-50 text-yellow-700 border border-yellow-200/50";
+                    else if (b.intensity === "ap3") zoneBg = "bg-red-50 text-red-700 border border-red-200/50";
+
+                    blockDiv.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-zinc-800 text-[11px]">${b.type || 'Interval Block'}</span>
+                            <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider ${zoneBg}">${b.intensity}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-[10px] text-zinc-500 font-mono">
+                            <div>Target HR: <span class="font-bold text-zinc-700">${b.target_hr} bpm</span></div>
+                            <div>Duration: <span class="font-bold text-zinc-700">${b.time_min} mins</span></div>
+                            ${b.distance_km ? `<div>Distance: <span class="font-bold text-zinc-700">${b.distance_km} km</span></div>` : ''}
+                            ${paceFormatted ? `<div class="text-zinc-650 font-bold col-span-2 text-right text-indigo-600">${paceFormatted}</div>` : ''}
+                        </div>
+                    `;
+                    blockBox.appendChild(blockDiv);
+                });
+
+                daySessionsList.appendChild(blockBox);
+            });
+
+            lucide.createIcons();
+        }
+
+        // --- MANAGE SESSIONS Logic ---
+        function deleteSession(id) {
+            trainingSessions = trainingSessions.filter(s => s.id !== id);
+            localStorage.setItem('ndure_sessions', JSON.stringify(trainingSessions));
+            renderAll();
+        }
+
+        // --- MODERN WORKOUT MODAL BUILDER ACTIONS ---
+        let currentModalBlocks = [];
+
+        function triggerAddSessionModal() {
+            const modal = document.getElementById('add-session-modal');
+            const targetDateInput = document.getElementById('modal-date-input');
+            
+            // Set current selectedDate in modal input
+            const targetDateStr = selectedDate.toISOString().split('T')[0];
+            targetDateInput.value = targetDateStr;
+
+            currentModalBlocks = [];
+            // Seed a default Warm-Up block
+            addBlockToModalForm();
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeAddSessionModal() {
+            document.getElementById('add-session-modal').classList.add('hidden');
+        }
+
+        function updateModalSportZones() {
+            // Re-render blocks with correct HR defaults for newly chosen sport inside the modal input fields
+            const sport = document.getElementById('modal-sport-select').value;
+            currentModalBlocks.forEach((block, idx) => {
+                const selectInt = document.getElementById(`block-intensity-${idx}`).value;
+                document.getElementById(`block-hr-${idx}`).value = hrZones[sport][selectInt] || 120;
+            });
+        }
+
+        function addBlockToModalForm() {
+            const idx = currentModalBlocks.length;
+            const blockObj = {
+                type: idx === 0 ? 'Warm Up' : `Interval Set ${idx}`,
+                intensity: 'easy',
+                target_hr: hrZones['run']['easy'],
+                time_min: 15,
+                distance_km: ''
+            };
+            currentModalBlocks.push(blockObj);
+
+            const container = document.getElementById('modal-blocks-container');
+            const row = document.createElement('div');
+            row.id = `modal-block-row-${idx}`;
+            row.className = "bg-zinc-50 border border-zinc-200/60 p-4 rounded-xl space-y-3 relative";
+
+            row.innerHTML = `
+                <button type="button" onclick="removeBlockFromModalForm(${idx})" class="absolute top-3 right-3 text-zinc-400 hover:text-red-500 text-xs">&times;</button>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 columns-2">
+                    <div>
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Block Label name</label>
+                        <input type="text" id="block-type-${idx}" value="${blockObj.type}" class="w-full text-xs p-2 border border-zinc-200 rounded-lg bg-white focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Intensity Range Zone</label>
+                        <select id="block-intensity-${idx}" onchange="changeModalBlockIntensityCode(${idx})" class="w-full text-xs p-2 border border-zinc-200 bg-white rounded-lg focus:outline-none">
+                            <option value="easy">Easy (Recovery)</option>
+                            <option value="ap1">AP1 (Aerobic Threshold)</option>
+                            <option value="ap2">AP2 (Intervals/Power)</option>
+                            <option value="ap3">AP3 (Anaerobic Peak)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase block">Target HR (BPM)</label>
+                        <input type="number" id="block-hr-${idx}" value="${blockObj.target_hr}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase block">Time (Mins)</label>
+                        <input type="number" id="block-time-${idx}" value="${blockObj.time_min}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase block">Distance (KM • Opt)</label>
+                        <input type="number" step="0.1" id="block-distance-${idx}" placeholder="Opt" class="w-full p-2 border border-zinc-200 rounded-lg font-mono">
+                    </div>
+                </div>
+            `;
+            container.appendChild(row);
+        }
+
+        function removeBlockFromModalForm(idx) {
+            const row = document.getElementById(`modal-block-row-${idx}`);
+            if (row) {
+                row.remove();
+                currentModalBlocks[idx] = null; // Mark deactivated
+            }
+        }
+
+        function changeModalBlockIntensityCode(idx) {
+            const sport = document.getElementById('modal-sport-select').value;
+            const chosenZone = document.getElementById(`block-intensity-${idx}`).value;
+            const targetHRInput = document.getElementById(`block-hr-${idx}`);
+            
+            // Set dynamic HR defaults
+            targetHRInput.value = hrZones[sport][chosenZone] || 120;
+        }
+
+        function saveSessionFromModal() {
+            const sportSelect = document.getElementById('modal-sport-select').value;
+            const dateVal = document.getElementById('modal-date-input').value;
+            const timeVal = document.getElementById('modal-time-input').value;
+
+            if (!dateVal || !timeVal) {
+                alert("Please select date and start time values.");
+                return;
+            }
+
+            // Gather active blocks
+            const finalizedBlocks = [];
+            currentModalBlocks.forEach((block, idx) => {
+                if (block === null) return; // Clean skipped rows
+
+                const type = document.getElementById(`block-type-${idx}`).value || 'Block Set';
+                const intensity = document.getElementById(`block-intensity-${idx}`).value;
+                const target_hr = parseInt(document.getElementById(`block-hr-${idx}`).value) || 120;
+                const time_min = parseInt(document.getElementById(`block-time-${idx}`).value) || 0;
+                
+                const rawDist = document.getElementById(`block-distance-${idx}`).value;
+                const distance_km = rawDist !== "" ? parseFloat(rawDist) : null;
+
+                finalizedBlocks.push({
+                    type,
+                    intensity,
+                    target_hr,
+                    time_min,
+                    distance_km
+                });
+            });
+
+            if (finalizedBlocks.length === 0) {
+                alert("Please define at least one workout block.");
+                return;
+            }
+
+            const model = {
+                id: Math.random().toString(36).substr(2, 9),
+                sport_type: sportSelect,
+                date: dateVal,
+                time: timeVal,
+                blocks: finalizedBlocks
+            };
+
+            trainingSessions.push(model);
+            localStorage.setItem('ndure_sessions', JSON.stringify(trainingSessions));
+            
+            closeAddSessionModal();
+            renderAll();
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('ndure_user_email');
+            window.location.href = "login.html";
+        }
+
+        // Global Render Orchestration
+        function renderAll() {
+            renderCalendar();
+            renderMiddleSessionsLog();
+            renderTotals();
+            renderRightSidebar();
+        }
+    </script>
+</body>
+</html>
