@@ -1,13 +1,16 @@
 /**
  * NdurePlan - Supabase JS API Library
  *
- * Install dependency: npm install @supabase/supabase-js
+ * No bundler is used in this static project, so we import the ESM build
+ * directly from a CDN. If you later add a bundler (Vite, webpack, etc.),
+ * switch this back to: import { createClient } from '@supabase/supabase-js';
+ * and run: npm install @supabase/supabase-js
  *
  * Replace placeholders with your actual Supabase URL & Public Anon key
  * found in your Supabase Account Dashboard (Project Settings -> API).
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL = 'https://ogikyrfnsaswqwsldkhr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9naWt5cmZuc2Fzd3F3c2xka2hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NDAwNzUsImV4cCI6MjA5NzAxNjA3NX0.a00mYAiTDWqm5R3VEoO3cUmwjbnXfePoHGSsfpVKLAE';

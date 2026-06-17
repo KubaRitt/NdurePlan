@@ -109,7 +109,9 @@
         &copy; 2026 NdurePlan. Designed for true performance athletes.
     </footer>
 
-    <script>
+    <script type="module">
+        import { signUpAthlete, signInAthlete } from './supabase_api.js';
+
         // Track the auth state
         let currentTab = 'login'; // 'login' or 'register'
 
@@ -152,49 +154,76 @@
             lucide.createIcons();
         }
 
-        function handleAuthSubmit(event) {
-            event.preventDefault();
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
+        function showMessage(text, variant) {
             const messageBox = document.getElementById('auth-message');
+            const styles = {
+                success: "p-3 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/50 block",
+                error: "p-3 rounded-lg text-xs font-medium bg-red-50 text-red-700 border border-red-200/50 block",
+                info: "p-3 rounded-lg text-xs font-medium bg-zinc-50 text-zinc-600 border border-zinc-200/50 block"
+            };
+            messageBox.className = styles[variant] || styles.info;
+            messageBox.textContent = text;
+        }
+
+        function setSubmitLoading(isLoading) {
+            const submitBtn = document.getElementById('auth-submit-btn');
+            submitBtn.disabled = isLoading;
+            submitBtn.classList.toggle('opacity-60', isLoading);
+            submitBtn.classList.toggle('cursor-not-allowed', isLoading);
+        }
+
+        async function handleAuthSubmit(event) {
+            event.preventDefault();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
 
             if (!email || !password) return;
 
-            // Simple validation simulation
             if (password.length < 6) {
-                messageBox.className = "p-3 rounded-lg text-xs font-medium bg-red-50 text-red-650 border border-red-200/50 block";
-                messageBox.textContent = "Password must be at least 6 characters long.";
+                showMessage("Password must be at least 6 characters long.", "error");
                 return;
             }
 
-            // Success simulation
-            messageBox.className = "p-3 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-650 border border-emerald-200/50 block";
+            setSubmitLoading(true);
 
-            if (currentTab === 'login') {
-                messageBox.textContent = "Authenticating... Loading your athletic planner.";
-            } else {
-                messageBox.textContent = "Account successfully registered! Initializing default heart rate zones.";
+            try {
+                if (currentTab === 'login') {
+                    showMessage("Authenticating...", "info");
+                    await signInAthlete(email, password);
+                    showMessage("Signed in. Loading your athletic planner...", "success");
+                } else {
+                    showMessage("Creating your account...", "info");
+                    const data = await signUpAthlete(email, password);
+
+                    // If email confirmation is enabled in Supabase Auth settings,
+                    // there is no session yet — the profiles row is still created
+                    // by the DB trigger, but the user must confirm before signing in.
+                    if (!data.session) {
+                        showMessage(
+                            "Account created! Check your email to confirm before signing in.",
+                            "success"
+                        );
+                        setSubmitLoading(false);
+                        return;
+                    }
+
+                    showMessage("Account created! Initializing your athletic planner...", "success");
+                }
+
+                setTimeout(() => {
+                    window.location.href = "dashboard.html";
+                }, 1000);
+            } catch (err) {
+                showMessage(err.message || "Something went wrong. Please try again.", "error");
+                setSubmitLoading(false);
             }
-
-            // Save user info in local storage for the static dashboard preview
-            localStorage.setItem('ndure_user_email', email);
-            if (!localStorage.getItem('ndure_hr_zones')) {
-                // Seed standard defaults
-                const defaultZones = {
-                    "run": {"easy": 120, "ap1": 135, "ap2": 150, "ap3": 170},
-                    "bike": {"easy": 110, "ap1": 125, "ap2": 140, "ap3": 155},
-                    "swim": {"easy": 115, "ap1": 130, "ap2": 145, "ap3": 160},
-                    "xc ski": {"easy": 118, "ap1": 133, "ap2": 148, "ap3": 165},
-                    "backcountry ski": {"easy": 115, "ap1": 128, "ap2": 142, "ap3": 158}
-                };
-                localStorage.setItem('ndure_hr_zones', JSON.stringify(defaultZones));
-            }
-
-            // Redirect to dashboard page
-            setTimeout(() => {
-                window.location.href = "dashboard.html";
-            }, 1200);
         }
+
+        // Expose handlers used by inline onclick/onsubmit attributes
+        // (required since this is now a module script, which doesn't
+        // leak declarations onto window automatically)
+        window.setAuthTab = setAuthTab;
+        window.handleAuthSubmit = handleAuthSubmit;
 
         // Initialize lucide icons
         lucide.createIcons();
