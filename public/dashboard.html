@@ -849,7 +849,7 @@
             const formattedHeader = document.getElementById('right-selected-day-formatted');
             const daySessionsList = document.getElementById('right-sessions-list');
 
-            formattedHeader.textContent = selectedDate.toLocaleDateString('en-US', { weekday: 'upper' });
+            formattedHeader.textContent = selectedDate.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
             dateTitle.textContent = selectedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
             daySessionsList.innerHTML = '';
