@@ -217,7 +217,7 @@
             <!-- Modal Head -->
             <div class="p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
                 <div class="space-y-0.5">
-                    <h3 class="font-bold text-zinc-850">Plan Training Session</h3>
+                    <h3 class="font-bold text-zinc-850" id="modal-title-label">Plan Training Session</h3>
                     <p class="text-xs text-zinc-450" id="modal-date-picker-label">Schedule blocks and goals</p>
                 </div>
                 <button onclick="closeAddSessionModal()" class="p-1 px-2 rounded-lg border hover:bg-zinc-100">&times;</button>
@@ -226,15 +226,11 @@
             <!-- Form -->
             <div class="p-6 space-y-6 flex-grow">
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <!-- Sport Type selection -->
+                    <!-- Discipline selection (sport sub-type) -->
                     <div class="space-y-1">
-                        <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">Sport</label>
-                        <select id="modal-sport-select" onchange="updateModalSportZones()" class="w-full text-xs p-2.5 border border-zinc-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-900">
-                            <option value="run">Run</option>
-                            <option value="bike">Bike</option>
-                            <option value="swim">Swim</option>
-                            <option value="xc ski">XC Ski</option>
-                            <option value="backcountry ski">Backcountry Ski</option>
+                        <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">Session Type</label>
+                        <select id="modal-discipline-select" onchange="updateModalSportZones()" class="w-full text-xs p-2.5 border border-zinc-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-900">
+                            <!-- Populated dynamically from sports.js -->
                         </select>
                     </div>
 
@@ -276,7 +272,7 @@
             <!-- Modal Foot -->
             <div class="p-4 border-t border-zinc-100 bg-zinc-50 flex items-center justify-end gap-3 rounded-b-2xl">
                 <button onclick="closeAddSessionModal()" class="px-4 py-2 hover:bg-zinc-200/70 border border-zinc-200 text-zinc-650 text-xs font-semibold rounded-lg">Cancel</button>
-                <button onclick="saveSessionFromModal()" class="px-5 py-2 bg-zinc-950 text-white hover:bg-zinc-800 text-xs font-semibold rounded-lg">Add Training Session</button>
+                <button onclick="saveSessionFromModal()" id="modal-save-btn" class="px-5 py-2 bg-zinc-950 text-white hover:bg-zinc-800 text-xs font-semibold rounded-lg">Add Training Session</button>
             </div>
         </div>
     </div>
@@ -303,6 +299,7 @@
             deleteTrainingSession,
             supabase
         } from './supabase_api.js';
+        import { PARENT_SPORTS, DISCIPLINES, getParentSportForDiscipline } from './sports.js';
 
         // CLIENT STATE MANAGEMENT
         let activeTab = 'plan';
@@ -348,6 +345,28 @@
             const div = document.createElement('div');
             div.textContent = str || '';
             return div.innerHTML;
+        }
+
+        // Total minutes for a single block, accounting for repeats. For
+        // customized repeats, sums each rep's own time; otherwise multiplies
+        // the shared per-rep time by the repeat count.
+        function blockTotalMinutes(b) {
+            const base = parseInt(b.time_min) || 0;
+            if (!b.repeat || !b.repeat.reps || b.repeat.reps <= 1) return base;
+            if (b.repeat.customized && b.repeat.per_rep.length > 0) {
+                return b.repeat.per_rep.reduce((acc, r) => acc + (parseInt(r.time_min) || 0), 0);
+            }
+            return base * b.repeat.reps;
+        }
+
+        // Total distance (km) for a single block, accounting for repeats.
+        function blockTotalDistance(b) {
+            const base = parseFloat(b.distance_km) || 0;
+            if (!b.repeat || !b.repeat.reps || b.repeat.reps <= 1) return base;
+            if (b.repeat.customized && b.repeat.per_rep.length > 0) {
+                return b.repeat.per_rep.reduce((acc, r) => acc + (parseFloat(r.distance_km) || 0), 0);
+            }
+            return base * b.repeat.reps;
         }
 
         // Load real user data from Supabase
@@ -626,7 +645,7 @@
                         sessionsListInner.className = "space-y-1.5 flex-grow";
 
                         daySessions.forEach(s => {
-                            const totalDuration = s.blocks.reduce((acc, b) => acc + (parseInt(b.time_min) || 0), 0);
+                            const totalDuration = s.blocks.reduce((acc, b) => acc + blockTotalMinutes(b), 0);
 
                             let sportIconName = 'footprints';
                             let iconColor = 'border-emerald-100 bg-emerald-50 text-emerald-800';
@@ -748,7 +767,7 @@
 
                     if (daySessions.length > 0) {
                         daySessions.slice(0, 2).forEach(s => {
-                            const totalDuration = s.blocks.reduce((acc, b) => acc + (parseInt(b.time_min) || 0), 0);
+                            const totalDuration = s.blocks.reduce((acc, b) => acc + blockTotalMinutes(b), 0);
 
                             let badgeStyle = "bg-zinc-100 text-zinc-700";
                             if (s.sport_type === 'run') badgeStyle = "bg-emerald-50 text-emerald-800 border-emerald-100";
@@ -761,7 +780,8 @@
                             badge.className = `text-[7px] font-bold py-0.5 px-1 rounded border leading-tight truncate tracking-tight ${badgeStyle}`;
                             const sportLabel = `${s.sport_type.split(' ')[0].toUpperCase()} ${totalDuration}m`;
                             badge.textContent = s.description ? `${sportLabel} · ${s.description}` : sportLabel;
-                            if (s.description) badge.title = s.description;
+                            const tooltipParts = [s.discipline || s.sport_type, s.description].filter(Boolean);
+                            if (tooltipParts.length > 0) badge.title = tooltipParts.join(' — ');
                             badgeContainer.appendChild(badge);
                         });
 
@@ -827,11 +847,13 @@
 
             listToCalc.forEach(s => {
                 s.blocks.forEach(b => {
-                    totalMin += (parseInt(b.time_min) || 0);
-                    if (b.distance_km) {
-                        sportsDist[s.sport_type] += parseFloat(b.distance_km);
+                    const blockMin = blockTotalMinutes(b);
+                    const blockDist = blockTotalDistance(b);
+                    totalMin += blockMin;
+                    if (blockDist) {
+                        sportsDist[s.sport_type] += blockDist;
                     }
-                    sportMinutes[s.sport_type] += (parseInt(b.time_min) || 0);
+                    sportMinutes[s.sport_type] += blockMin;
                 });
             });
 
@@ -911,16 +933,22 @@
                 const blockBox = document.createElement('div');
                 blockBox.className = "p-4 border border-zinc-200 bg-zinc-50/50 rounded-xl space-y-3 relative group";
 
-                // Delete Session Button inside card
+                // Edit + Delete Session Buttons inside card
+                const displayLabel = (s.discipline && s.discipline.length > 0) ? s.discipline : s.sport_type;
                 blockBox.innerHTML = `
                     <div class="flex items-center justify-between border-b border-zinc-100 pb-2">
                         <div class="flex items-center gap-2">
-                            <span class="text-xs font-bold text-zinc-800 capitalize">${s.sport_type} Session</span>
+                            <span class="text-xs font-bold text-zinc-800 capitalize">${escapeHtml(displayLabel)}</span>
                             <span class="text-[9px] font-mono font-medium text-zinc-400">${s.time}</span>
                         </div>
-                        <button onclick="deleteSession('${s.id}')" class="text-zinc-400 hover:text-red-500 hover:bg-zinc-100 p-1 rounded transition-colors" title="Delete Session">
-                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                        </button>
+                        <div class="flex items-center gap-1">
+                            <button onclick="openEditSessionModal('${s.id}')" class="text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 p-1 rounded transition-colors" title="Edit Session">
+                                <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button onclick="deleteSession('${s.id}')" class="text-zinc-400 hover:text-red-500 hover:bg-zinc-100 p-1 rounded transition-colors" title="Delete Session">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
                     </div>
                     ${s.description ? `<p class="text-xs text-zinc-600 font-medium leading-snug">${escapeHtml(s.description)}</p>` : ''}
                     <div class="space-y-2">
@@ -931,7 +959,12 @@
                     const blockDiv = document.createElement('div');
                     blockDiv.className = "bg-white p-2.5 rounded-lg border border-zinc-100 text-xs space-y-1.5 shadow-sm";
 
-                    // Compute Target Pace if both time and distance is present
+                    const isRepeatForPace = b.repeat && b.repeat.reps > 1;
+
+                    // Compute Target Pace if both time and distance is present.
+                    // For repeated blocks these are per-rep values, so the
+                    // resulting pace is genuinely per-rep (e.g. pace for one
+                    // 200m), which is what's useful to see for intervals.
                     let paceFormatted = '';
                     if (b.time_min && b.distance_km) {
                         const totalMins = parseFloat(b.time_min);
@@ -940,7 +973,7 @@
                             const decimalPace = totalMins / distKm;
                             const paceMin = Math.floor(decimalPace);
                             const paceSec = Math.round((decimalPace - paceMin) * 60);
-                            paceFormatted = `Pace: ${paceMin}:${paceSec < 10 ? '0' + paceSec : paceSec} /km`;
+                            paceFormatted = `${isRepeatForPace ? 'Per-rep pace' : 'Pace'}: ${paceMin}:${paceSec < 10 ? '0' + paceSec : paceSec} /km`;
                         }
                     }
 
@@ -951,15 +984,32 @@
                     else if (b.intensity === "ap2") zoneBg = "bg-yellow-50 text-yellow-700 border border-yellow-200/50";
                     else if (b.intensity === "ap3") zoneBg = "bg-red-50 text-red-700 border border-red-200/50";
 
+                    const isRepeat = b.repeat && b.repeat.reps > 1;
+                    const repeatBadge = isRepeat
+                        ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-zinc-900 text-white">${b.repeat.reps}&times;</span>`
+                        : '';
+                    const totalTime = isRepeat ? (b.repeat.customized
+                        ? b.repeat.per_rep.reduce((acc, r) => acc + (parseInt(r.time_min) || 0), 0)
+                        : b.time_min * b.repeat.reps) : b.time_min;
+                    const totalDist = isRepeat ? (b.repeat.customized
+                        ? b.repeat.per_rep.reduce((acc, r) => acc + (parseFloat(r.distance_km) || 0), 0)
+                        : (b.distance_km || 0) * b.repeat.reps) : b.distance_km;
+                    const restNote = isRepeat ? `<div class="text-zinc-400">Rest: <span class="font-bold text-zinc-600">${b.repeat.rest_sec}s</span> between reps</div>` : '';
+
                     blockDiv.innerHTML = `
                         <div class="flex items-center justify-between">
-                            <span class="font-bold text-zinc-800 text-[11px]">${b.type || 'Interval Block'}</span>
+                            <div class="flex items-center gap-1.5">
+                                <span class="font-bold text-zinc-800 text-[11px]">${escapeHtml(b.type) || 'Interval Block'}</span>
+                                ${repeatBadge}
+                            </div>
                             <span class="px-2 py-0.5 rounded text-[9px] uppercase font-bold tracking-wider ${zoneBg}">${b.intensity}</span>
                         </div>
+                        ${isRepeat ? `<div class="text-[9px] text-zinc-400 font-mono">${b.repeat.reps} &times; ${b.time_min}min${b.distance_km ? ' / ' + b.distance_km + 'km' : ''} per rep</div>` : ''}
                         <div class="grid grid-cols-2 gap-2 text-[10px] text-zinc-500 font-mono">
                             <div>Target HR: <span class="font-bold text-zinc-700">${b.target_hr} bpm</span></div>
-                            <div>Duration: <span class="font-bold text-zinc-700">${b.time_min} mins</span></div>
-                            ${b.distance_km ? `<div>Distance: <span class="font-bold text-zinc-700">${b.distance_km} km</span></div>` : ''}
+                            <div>Total time: <span class="font-bold text-zinc-700">${totalTime} mins</span></div>
+                            ${totalDist ? `<div>Total distance: <span class="font-bold text-zinc-700">${totalDist.toFixed ? totalDist.toFixed(2) : totalDist} km</span></div>` : ''}
+                            ${restNote}
                             ${paceFormatted ? `<div class="text-zinc-650 font-bold col-span-2 text-right text-indigo-600">${paceFormatted}</div>` : ''}
                         </div>
                     `;
@@ -986,17 +1036,24 @@
 
         // --- MODERN WORKOUT MODAL BUILDER ACTIONS ---
         let currentModalBlocks = [];
+        let editingSessionId = null; // null = creating a new session; otherwise the id being edited
 
         function triggerAddSessionModal() {
             const modal = document.getElementById('add-session-modal');
             const targetDateInput = document.getElementById('modal-date-input');
+
+            editingSessionId = null;
+            document.getElementById('modal-title-label').textContent = 'Plan Training Session';
+            document.getElementById('modal-save-btn').textContent = 'Add Training Session';
+
+            populateDisciplineSelect();
 
             // Set current selectedDate in modal input
             const targetDateStr = toLocalDateStr(selectedDate);
             targetDateInput.value = targetDateStr;
 
             document.getElementById('modal-description-input').value = '';
-            document.getElementById('modal-sport-select').value = 'run';
+            document.getElementById('modal-discipline-select').value = DISCIPLINES['run'][0];
             document.getElementById('modal-time-input').value = '08:00';
 
             // Clear both the JS state AND the rendered DOM rows — clearing
@@ -1012,70 +1069,271 @@
             modal.classList.remove('hidden');
         }
 
+        function openEditSessionModal(sessionId) {
+            const session = trainingSessions.find(s => s.id === sessionId);
+            if (!session) return;
+
+            const modal = document.getElementById('add-session-modal');
+
+            editingSessionId = sessionId;
+            document.getElementById('modal-title-label').textContent = 'Edit Training Session';
+            document.getElementById('modal-save-btn').textContent = 'Save Changes';
+
+            populateDisciplineSelect();
+
+            document.getElementById('modal-date-input').value = session.date;
+            document.getElementById('modal-time-input').value = session.time;
+            document.getElementById('modal-description-input').value = session.description || '';
+
+            // Prefer the stored discipline; fall back to the parent sport
+            // label for sessions saved before the discipline column existed.
+            const disciplineValue = session.discipline && session.discipline.length > 0
+                ? session.discipline
+                : (DISCIPLINES[session.sport_type] ? DISCIPLINES[session.sport_type][0] : DISCIPLINES['run'][0]);
+            document.getElementById('modal-discipline-select').value = disciplineValue;
+
+            currentModalBlocks = [];
+            document.getElementById('modal-blocks-container').innerHTML = '';
+
+            (session.blocks || []).forEach(b => {
+                addBlockToModalForm({
+                    type: b.type,
+                    intensity: b.intensity,
+                    target_hr: b.target_hr,
+                    time_min: b.time_min,
+                    distance_km: b.distance_km ?? '',
+                    repeat: b.repeat ? JSON.parse(JSON.stringify(b.repeat)) : { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [] }
+                });
+            });
+
+            if (currentModalBlocks.length === 0) addBlockToModalForm();
+
+            modal.classList.remove('hidden');
+        }
+
         function closeAddSessionModal() {
             document.getElementById('add-session-modal').classList.add('hidden');
         }
 
-        function updateModalSportZones() {
-            // Re-render blocks with correct HR defaults for newly chosen sport inside the modal input fields
-            const sport = document.getElementById('modal-sport-select').value;
-            currentModalBlocks.forEach((block, idx) => {
-                const selectInt = document.getElementById(`block-intensity-${idx}`).value;
-                document.getElementById(`block-hr-${idx}`).value = hrZones[sport][selectInt] || 120;
+        function populateDisciplineSelect() {
+            const select = document.getElementById('modal-discipline-select');
+            select.innerHTML = '';
+            PARENT_SPORTS.forEach(parent => {
+                const group = document.createElement('optgroup');
+                group.label = parent.replace(/\b\w/g, c => c.toUpperCase());
+                DISCIPLINES[parent].forEach(discipline => {
+                    const opt = document.createElement('option');
+                    opt.value = discipline;
+                    opt.textContent = discipline;
+                    group.appendChild(opt);
+                });
+                select.appendChild(group);
             });
         }
 
-        function addBlockToModalForm() {
+        function updateModalSportZones() {
+            // Re-render blocks with correct HR defaults for the newly chosen
+            // discipline's parent sport inside the modal input fields
+            const discipline = document.getElementById('modal-discipline-select').value;
+            const sport = getParentSportForDiscipline(discipline);
+            currentModalBlocks.forEach((block, idx) => {
+                if (block === null) return;
+                const selectInt = document.getElementById(`block-intensity-${idx}`);
+                if (selectInt) {
+                    document.getElementById(`block-hr-${idx}`).value = hrZones[sport][selectInt.value] || 120;
+                }
+            });
+        }
+
+        function addBlockToModalForm(prefill = null) {
             const idx = currentModalBlocks.length;
-            const blockObj = {
+            const blockObj = prefill || {
                 type: idx === 0 ? 'Warm Up' : `Interval Set ${idx}`,
                 intensity: 'easy',
-                target_hr: hrZones['run']['easy'],
+                target_hr: hrZones[getParentSportForDiscipline(document.getElementById('modal-discipline-select').value)]['easy'],
                 time_min: 15,
-                distance_km: ''
+                distance_km: '',
+                repeat: { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [] }
             };
+            if (!blockObj.repeat) blockObj.repeat = { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [] };
             currentModalBlocks.push(blockObj);
 
             const container = document.getElementById('modal-blocks-container');
             const row = document.createElement('div');
             row.id = `modal-block-row-${idx}`;
-            row.className = "bg-zinc-50 border border-zinc-200/60 p-4 rounded-xl space-y-3 relative";
+            row.className = "bg-zinc-50 border border-zinc-200 p-4 rounded-xl space-y-3 relative";
+            container.appendChild(row);
+
+            renderBlockRow(idx);
+        }
+
+        // Renders (or re-renders) the full contents of a single block row,
+        // including the conditional repeat-config and per-rep editor sections.
+        function renderBlockRow(idx) {
+            const blockObj = currentModalBlocks[idx];
+            const row = document.getElementById(`modal-block-row-${idx}`);
+            if (!blockObj || !row) return;
+
+            const repeatChecked = blockObj.repeat.enabled ? 'checked' : '';
+            const isRepeating = blockObj.repeat.enabled;
 
             row.innerHTML = `
-                <button type="button" onclick="removeBlockFromModalForm(${idx})" class="absolute top-3 right-3 text-zinc-400 hover:text-red-500 text-xs">&times;</button>
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex-grow space-y-1">
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Block Name</label>
+                        <input type="text" id="block-type-${idx}" value="${escapeHtml(blockObj.type)}" class="w-full text-sm font-semibold p-2 border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900">
+                    </div>
+                    <button type="button" onclick="removeBlockFromModalForm(${idx})" class="mt-5 text-zinc-400 hover:text-red-500 p-1 rounded transition-colors" title="Remove block">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 columns-2">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div>
-                        <label class="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Block Label name</label>
-                        <input type="text" id="block-type-${idx}" value="${blockObj.type}" class="w-full text-xs p-2 border border-zinc-200 rounded-lg bg-white focus:outline-none">
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Intensity</label>
+                        <select id="block-intensity-${idx}" onchange="changeModalBlockIntensityCode(${idx})" class="w-full text-xs p-2 border border-zinc-200 bg-white rounded-lg focus:outline-none">
+                            <option value="easy" ${blockObj.intensity === 'easy' ? 'selected' : ''}>Easy</option>
+                            <option value="ap1" ${blockObj.intensity === 'ap1' ? 'selected' : ''}>AP1</option>
+                            <option value="ap2" ${blockObj.intensity === 'ap2' ? 'selected' : ''}>AP2</option>
+                            <option value="ap3" ${blockObj.intensity === 'ap3' ? 'selected' : ''}>AP3</option>
+                        </select>
                     </div>
                     <div>
-                        <label class="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Intensity Range Zone</label>
-                        <select id="block-intensity-${idx}" onchange="changeModalBlockIntensityCode(${idx})" class="w-full text-xs p-2 border border-zinc-200 bg-white rounded-lg focus:outline-none">
-                            <option value="easy">Easy (Recovery)</option>
-                            <option value="ap1">AP1 (Aerobic Threshold)</option>
-                            <option value="ap2">AP2 (Intervals/Power)</option>
-                            <option value="ap3">AP3 (Anaerobic Peak)</option>
-                        </select>
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Target HR</label>
+                        <input type="number" id="block-hr-${idx}" value="${blockObj.target_hr}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">${isRepeating ? 'Time/rep (min)' : 'Time (min)'}</label>
+                        <input type="number" id="block-time-${idx}" value="${blockObj.time_min}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">${isRepeating ? 'Dist/rep (km)' : 'Distance (km)'}</label>
+                        <input type="number" step="0.01" id="block-distance-${idx}" value="${blockObj.distance_km}" placeholder="Optional" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
                     </div>
                 </div>
 
-                <div class="grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                        <label class="text-[9px] font-bold text-zinc-400 uppercase block">Target HR (BPM)</label>
-                        <input type="number" id="block-hr-${idx}" value="${blockObj.target_hr}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono">
-                    </div>
-                    <div>
-                        <label class="text-[9px] font-bold text-zinc-400 uppercase block">Time (Mins)</label>
-                        <input type="number" id="block-time-${idx}" value="${blockObj.time_min}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono">
-                    </div>
-                    <div>
-                        <label class="text-[9px] font-bold text-zinc-400 uppercase block">Distance (KM • Opt)</label>
-                        <input type="number" step="0.1" id="block-distance-${idx}" placeholder="Opt" class="w-full p-2 border border-zinc-200 rounded-lg font-mono">
+                <div class="border-t border-zinc-200 pt-3">
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" id="block-repeat-toggle-${idx}" ${repeatChecked} onchange="toggleBlockRepeat(${idx})" class="w-3.5 h-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900">
+                        <span class="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">Repeat this block</span>
+                        <span class="text-[10px] text-zinc-400">(e.g. 20&times;200m intervals)</span>
+                    </label>
+
+                    <div id="block-repeat-config-${idx}" class="${isRepeating ? '' : 'hidden'} mt-3 pl-1 space-y-3">
+                        <div class="grid grid-cols-2 gap-2 max-w-xs">
+                            <div>
+                                <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Repetitions</label>
+                                <input type="number" min="1" id="block-reps-${idx}" value="${blockObj.repeat.reps}" onchange="onRepeatCountChange(${idx})" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                            </div>
+                            <div>
+                                <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Rest between (sec)</label>
+                                <input type="number" min="0" id="block-rest-${idx}" value="${blockObj.repeat.rest_sec}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                            </div>
+                        </div>
+
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" id="block-customize-toggle-${idx}" ${blockObj.repeat.customized ? 'checked' : ''} onchange="toggleRepeatCustomize(${idx})" class="w-3.5 h-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900">
+                            <span class="text-[10px] font-semibold text-zinc-500">Customize each rep individually</span>
+                        </label>
+
+                        <div id="block-per-rep-list-${idx}" class="${blockObj.repeat.customized ? '' : 'hidden'} space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
                     </div>
                 </div>
             `;
-            container.appendChild(row);
+
+            if (blockObj.repeat.customized) renderPerRepList(idx);
+            lucide.createIcons();
+        }
+
+        function toggleBlockRepeat(idx) {
+            const blockObj = currentModalBlocks[idx];
+            blockObj.repeat.enabled = document.getElementById(`block-repeat-toggle-${idx}`).checked;
+            // Preserve current field values before re-rendering the row
+            syncBlockFieldsToState(idx);
+            renderBlockRow(idx);
+        }
+
+        function onRepeatCountChange(idx) {
+            const blockObj = currentModalBlocks[idx];
+            const newReps = Math.max(1, parseInt(document.getElementById(`block-reps-${idx}`).value) || 1);
+            blockObj.repeat.reps = newReps;
+            if (blockObj.repeat.customized) {
+                adjustPerRepArrayLength(idx);
+                renderPerRepList(idx);
+            }
+        }
+
+        function toggleRepeatCustomize(idx) {
+            const blockObj = currentModalBlocks[idx];
+            blockObj.repeat.customized = document.getElementById(`block-customize-toggle-${idx}`).checked;
+            const listEl = document.getElementById(`block-per-rep-list-${idx}`);
+            if (blockObj.repeat.customized) {
+                adjustPerRepArrayLength(idx);
+                listEl.classList.remove('hidden');
+                renderPerRepList(idx);
+            } else {
+                listEl.classList.add('hidden');
+            }
+        }
+
+        // Ensures per_rep has exactly `reps` entries, seeding new ones from
+        // the block's shared time/distance/HR defaults.
+        function adjustPerRepArrayLength(idx) {
+            const blockObj = currentModalBlocks[idx];
+            const reps = blockObj.repeat.reps;
+            const timeVal = parseInt(document.getElementById(`block-time-${idx}`).value) || blockObj.time_min;
+            const distVal = document.getElementById(`block-distance-${idx}`).value;
+            const hrVal = parseInt(document.getElementById(`block-hr-${idx}`).value) || blockObj.target_hr;
+
+            while (blockObj.repeat.per_rep.length < reps) {
+                blockObj.repeat.per_rep.push({
+                    time_min: timeVal,
+                    distance_km: distVal !== "" ? parseFloat(distVal) : null,
+                    target_hr: hrVal
+                });
+            }
+            blockObj.repeat.per_rep.length = reps; // truncate if reduced
+        }
+
+        function renderPerRepList(idx) {
+            const blockObj = currentModalBlocks[idx];
+            const listEl = document.getElementById(`block-per-rep-list-${idx}`);
+            if (!listEl) return;
+            listEl.innerHTML = blockObj.repeat.per_rep.map((rep, repIdx) => `
+                <div class="grid grid-cols-[2rem_1fr_1fr_1fr] gap-1.5 items-center bg-white border border-zinc-200 rounded-lg p-1.5">
+                    <span class="text-[9px] font-bold text-zinc-400 text-center">#${repIdx + 1}</span>
+                    <input type="number" value="${rep.time_min}" placeholder="min" title="Time (min)" onchange="updatePerRepValue(${idx}, ${repIdx}, 'time_min', this.value)" class="w-full text-[10px] p-1.5 border border-zinc-200 rounded font-mono">
+                    <input type="number" step="0.01" value="${rep.distance_km ?? ''}" placeholder="km" title="Distance (km)" onchange="updatePerRepValue(${idx}, ${repIdx}, 'distance_km', this.value)" class="w-full text-[10px] p-1.5 border border-zinc-200 rounded font-mono">
+                    <input type="number" value="${rep.target_hr}" placeholder="bpm" title="Target HR" onchange="updatePerRepValue(${idx}, ${repIdx}, 'target_hr', this.value)" class="w-full text-[10px] p-1.5 border border-zinc-200 rounded font-mono">
+                </div>
+            `).join('');
+        }
+
+        function updatePerRepValue(idx, repIdx, field, value) {
+            const blockObj = currentModalBlocks[idx];
+            const rep = blockObj.repeat.per_rep[repIdx];
+            if (field === 'distance_km') {
+                rep[field] = value !== "" ? parseFloat(value) : null;
+            } else {
+                rep[field] = parseInt(value) || 0;
+            }
+        }
+
+        // Reads current input values for a row back into currentModalBlocks,
+        // used before re-rendering a row so in-progress edits aren't lost.
+        function syncBlockFieldsToState(idx) {
+            const blockObj = currentModalBlocks[idx];
+            if (!blockObj) return;
+            const typeEl = document.getElementById(`block-type-${idx}`);
+            const intensityEl = document.getElementById(`block-intensity-${idx}`);
+            const hrEl = document.getElementById(`block-hr-${idx}`);
+            const timeEl = document.getElementById(`block-time-${idx}`);
+            const distEl = document.getElementById(`block-distance-${idx}`);
+            if (typeEl) blockObj.type = typeEl.value;
+            if (intensityEl) blockObj.intensity = intensityEl.value;
+            if (hrEl) blockObj.target_hr = parseInt(hrEl.value) || blockObj.target_hr;
+            if (timeEl) blockObj.time_min = parseInt(timeEl.value) || blockObj.time_min;
+            if (distEl) blockObj.distance_km = distEl.value;
         }
 
         function removeBlockFromModalForm(idx) {
@@ -1087,7 +1345,8 @@
         }
 
         function changeModalBlockIntensityCode(idx) {
-            const sport = document.getElementById('modal-sport-select').value;
+            const discipline = document.getElementById('modal-discipline-select').value;
+            const sport = getParentSportForDiscipline(discipline);
             const chosenZone = document.getElementById(`block-intensity-${idx}`).value;
             const targetHRInput = document.getElementById(`block-hr-${idx}`);
 
@@ -1096,7 +1355,8 @@
         }
 
         async function saveSessionFromModal() {
-            const sportSelect = document.getElementById('modal-sport-select').value;
+            const disciplineVal = document.getElementById('modal-discipline-select').value;
+            const sportType = getParentSportForDiscipline(disciplineVal);
             const dateVal = document.getElementById('modal-date-input').value;
             const timeVal = document.getElementById('modal-time-input').value;
             const descriptionVal = document.getElementById('modal-description-input').value.trim();
@@ -1119,12 +1379,27 @@
                 const rawDist = document.getElementById(`block-distance-${idx}`).value;
                 const distance_km = rawDist !== "" ? parseFloat(rawDist) : null;
 
+                const repeatEnabled = document.getElementById(`block-repeat-toggle-${idx}`).checked;
+                let repeat = null;
+                if (repeatEnabled) {
+                    const reps = Math.max(1, parseInt(document.getElementById(`block-reps-${idx}`).value) || 1);
+                    const rest_sec = parseInt(document.getElementById(`block-rest-${idx}`).value) || 0;
+                    const customized = block.repeat.customized;
+                    repeat = {
+                        reps,
+                        rest_sec,
+                        customized,
+                        per_rep: customized ? block.repeat.per_rep.slice(0, reps) : []
+                    };
+                }
+
                 finalizedBlocks.push({
                     type,
                     intensity,
                     target_hr,
                     time_min,
-                    distance_km
+                    distance_km,
+                    repeat
                 });
             });
 
@@ -1133,16 +1408,24 @@
                 return;
             }
 
-            try {
-                const savedSession = await createTrainingSession({
-                    sport_type: sportSelect,
-                    date: dateVal,
-                    time: timeVal,
-                    blocks: finalizedBlocks,
-                    description: descriptionVal
-                });
+            const payload = {
+                sport_type: sportType,
+                discipline: disciplineVal,
+                date: dateVal,
+                time: timeVal,
+                blocks: finalizedBlocks,
+                description: descriptionVal
+            };
 
-                trainingSessions.push(savedSession);
+            try {
+                if (editingSessionId) {
+                    const updated = await updateTrainingSession(editingSessionId, payload);
+                    const i = trainingSessions.findIndex(s => s.id === editingSessionId);
+                    if (i !== -1) trainingSessions[i] = updated;
+                } else {
+                    const savedSession = await createTrainingSession(payload);
+                    trainingSessions.push(savedSession);
+                }
                 closeAddSessionModal();
                 renderAll();
             } catch (err) {
@@ -1176,11 +1459,16 @@
         window.navigateMonth = navigateMonth;
         window.saveHRZonesFromSettings = saveHRZonesFromSettings;
         window.triggerAddSessionModal = triggerAddSessionModal;
+        window.openEditSessionModal = openEditSessionModal;
         window.closeAddSessionModal = closeAddSessionModal;
         window.updateModalSportZones = updateModalSportZones;
         window.addBlockToModalForm = addBlockToModalForm;
         window.removeBlockFromModalForm = removeBlockFromModalForm;
         window.changeModalBlockIntensityCode = changeModalBlockIntensityCode;
+        window.toggleBlockRepeat = toggleBlockRepeat;
+        window.onRepeatCountChange = onRepeatCountChange;
+        window.toggleRepeatCustomize = toggleRepeatCustomize;
+        window.updatePerRepValue = updatePerRepValue;
         window.saveSessionFromModal = saveSessionFromModal;
         window.deleteSession = deleteSession;
         window.handleLogout = handleLogout;
