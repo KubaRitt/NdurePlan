@@ -42,9 +42,8 @@
         <div class="max-w-[1600px] mx-auto px-6 h-16 flex items-center justify-between">
             <!-- App Name & Brand -->
             <div class="flex items-center gap-8">
-                <a href="index.html" class="flex items-center gap-2.5 font-bold text-lg tracking-tight hover:opacity-90 transition-opacity">
-                    <div class="h-8 w-8 bg-zinc-950 rounded-lg flex items-center justify-center text-white text-sm font-mono leading-none">N</div>
-                    <span>Ndure<span class="text-zinc-500 font-normal">Plan</span></span>
+                <a href="index.html" class="font-bold text-base tracking-tight hover:opacity-70 transition-opacity font-mono">
+                    ndure<span class="text-zinc-400">/</span>plan
                 </a>
 
                 <!-- Core Navigation Tabs -->
@@ -117,38 +116,46 @@
                 </div>
             </section>
 
-            <!-- MIDDLE BAR (Week / Month view + adding session prompt) -->
+            <!-- MIDDLE BAR (Continuous zoomable day timeline) -->
             <section class="lg:col-span-6 space-y-6">
-                <!-- Session Dashboard Bar -->
+                <!-- Timeline Canvas -->
                 <div class="bg-white border border-zinc-200/80 rounded-2xl p-5 shadow-sm space-y-4">
                     <div class="flex items-center justify-between border-b border-zinc-100 pb-3 flex-wrap gap-2">
                         <div class="space-y-0.5">
-                            <h2 class="text-lg font-bold text-zinc-900 flex items-center gap-2">
-                                <span id="middle-view-header">Workouts Log</span>
+                            <h2 class="text-sm font-bold text-zinc-900 font-mono tracking-tight">
+                                <span id="middle-view-header">JUN 2026</span>
                             </h2>
-                            <p class="text-xs text-zinc-400 font-light">Schedule training sessions and monitor intensities</p>
+                            <p class="text-[11px] text-zinc-400 font-mono">scroll to move &middot; ctrl+scroll or +/&minus; to zoom</p>
                         </div>
 
-                        <!-- Week/Month view Option Toggles -->
-                        <div class="flex items-center gap-1 bg-zinc-100/80 border border-zinc-200/40 p-1 rounded-xl">
-                            <button onclick="setCalendarView('week')" id="btn-view-week" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-zinc-900 shadow-sm transition-all">
-                                Week View
+                        <!-- Zoom & navigation controls -->
+                        <div class="flex items-center gap-2">
+                            <button onclick="jumpToToday()" class="px-2.5 py-1.5 text-[11px] font-mono font-semibold rounded-lg border border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400 transition-all">
+                                TODAY
                             </button>
-                            <button onclick="setCalendarView('month')" id="btn-view-month" class="px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-500 hover:text-zinc-900 transition-all">
-                                Month View
-                            </button>
+                            <div class="flex items-center gap-0.5 bg-zinc-100/80 border border-zinc-200/40 p-1 rounded-lg">
+                                <button onclick="adjustZoom(-1)" class="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded transition-all" title="Zoom out">
+                                    <i data-lucide="minus" class="w-3 h-3"></i>
+                                </button>
+                                <span id="zoom-level-label" class="text-[10px] font-mono font-bold text-zinc-500 w-10 text-center select-none">7d</span>
+                                <button onclick="adjustZoom(1)" class="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded transition-all" title="Zoom in">
+                                    <i data-lucide="plus" class="w-3 h-3"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Inner Workout Grid depending on week/month active -->
-                    <div class="space-y-3" id="sessions-list-container">
-                        <!-- Filled by JS -->
+                    <!-- Horizontally scrollable day canvas -->
+                    <div id="timeline-scroll-area" class="overflow-x-auto overflow-y-hidden scrollbar-none -mx-1 px-1">
+                        <div id="timeline-days-container" class="flex gap-1.5 pt-1 pb-2">
+                            <!-- Filled by JS: one column per visible day -->
+                        </div>
                     </div>
 
                     <!-- Add Session Fast button -->
-                    <button onclick="triggerAddSessionModal()" class="w-full py-3.5 border-2 border-dashed border-zinc-200 hover:border-zinc-400 text-zinc-500 hover:text-zinc-950 rounded-xl flex items-center justify-center gap-2 text-sm font-medium transition-all group">
-                        <i data-lucide="plus-circle" class="w-4 h-4 group-hover:scale-110 transition-transform"></i>
-                        <span>Plan New Session on Selected Day</span>
+                    <button onclick="triggerAddSessionModal()" class="w-full py-3 border border-dashed border-zinc-200 hover:border-zinc-400 text-zinc-500 hover:text-zinc-950 rounded-xl flex items-center justify-center gap-2 text-xs font-mono font-medium transition-all group">
+                        <i data-lucide="plus" class="w-3.5 h-3.5 group-hover:scale-110 transition-transform"></i>
+                        <span>add session — selected day</span>
                     </button>
                 </div>
             </section>
@@ -303,9 +310,21 @@
 
         // CLIENT STATE MANAGEMENT
         let activeTab = 'plan';
-        let calendarView = 'week'; // 'week' or 'month'
-        let selectedDate = new Date(2026, 5, 16); // June 16, 2026 (Mon/Tue range)
-        let activeMonthYear = { month: 5, year: 2026 }; // June 2026
+        let timelineAnchorDate = new Date(); // leftmost visible day on the timeline; reset on load
+        let zoomIndex = 1; // index into ZOOM_LEVELS
+        let selectedDate = new Date(); // reset to today on load
+        let activeMonthYear = { month: new Date().getMonth(), year: new Date().getFullYear() };
+
+        // Discrete zoom steps for the timeline canvas. `visibleDays` controls
+        // how many day-columns are rendered into the scroll area at once;
+        // `colWidth` is each column's pixel width; `detail` controls how much
+        // session info is shown per card at that density.
+        const ZOOM_LEVELS = [
+            { label: '3d',  visibleDays: 3,  colWidth: 220, detail: 'full' },
+            { label: '7d',  visibleDays: 7,  colWidth: 132, detail: 'normal' },
+            { label: '14d', visibleDays: 14, colWidth: 84,  detail: 'compact' },
+            { label: '30d', visibleDays: 30, colWidth: 48,  detail: 'minimal' }
+        ];
 
         // HR Zones Matrix state (loaded from Supabase profile on page load)
         let hrZones = {
@@ -398,10 +417,21 @@
                 trainingSessions = [];
             }
 
+            // Default to today rather than a fixed placeholder date, and
+            // anchor the timeline a couple of days before today so the
+            // canvas opens showing recent context plus the near future,
+            // instead of placing "today" right at the left edge.
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            selectedDate = new Date(today);
+            timelineAnchorDate = new Date(today);
+            timelineAnchorDate.setDate(timelineAnchorDate.getDate() - 1);
+
             // Sync year/month with current selectedDay
             activeMonthYear.year = selectedDate.getFullYear();
             activeMonthYear.month = selectedDate.getMonth();
 
+            initTimelineScrollHandlers();
             renderAll();
         });
 
@@ -427,22 +457,6 @@
             }
         }
 
-        function setCalendarView(view) {
-            calendarView = view;
-            const btnWeek = document.getElementById('btn-view-week');
-            const btnMonth = document.getElementById('btn-view-month');
-
-            if (view === 'week') {
-                btnWeek.className = "px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-zinc-900 shadow-sm transition-all";
-                btnMonth.className = "px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-500 hover:text-zinc-900 transition-all";
-            } else {
-                btnMonth.className = "px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-zinc-900 shadow-sm transition-all";
-                btnWeek.className = "px-3 py-1.5 text-xs font-medium rounded-lg text-zinc-500 hover:text-zinc-900 transition-all";
-            }
-            renderMiddleSessionsLog();
-            renderTotals();
-        }
-
         // --- CALENDAR GENERATION ---
         function navigateMonth(direction) {
             activeMonthYear.month += direction;
@@ -458,12 +472,21 @@
 
         function selectCalendarDate(year, month, day) {
             selectedDate = new Date(year, month, day);
+
+            // Re-anchor the timeline if the newly selected date would fall
+            // outside the currently visible range, so picking a date from
+            // the mini-calendar always scrolls the canvas into view.
+            const zoom = ZOOM_LEVELS[zoomIndex];
+            const visibleEnd = new Date(timelineAnchorDate);
+            visibleEnd.setDate(visibleEnd.getDate() + zoom.visibleDays - 1);
+            if (selectedDate < timelineAnchorDate || selectedDate > visibleEnd) {
+                timelineAnchorDate = new Date(selectedDate);
+            }
+
             renderCalendar();
             renderRightSidebar();
             renderTotals();
-            if (calendarView === 'week') {
-                renderMiddleSessionsLog();
-            }
+            renderTimeline();
         }
 
         function renderCalendar() {
@@ -574,238 +597,164 @@
             renderAll();
         }
 
-        // --- MIDDLE BAR LOG DRAWER ---
-        function renderMiddleSessionsLog() {
-            const container = document.getElementById('sessions-list-container');
+        // --- TIMELINE CANVAS (continuous, zoomable day strip) ---
+        function renderTimeline() {
+            const container = document.getElementById('timeline-days-container');
             container.innerHTML = '';
 
-            if (calendarView === 'week') {
-                container.className = "grid grid-cols-2 sm:grid-cols-7 gap-2.5 pt-2";
+            const zoom = ZOOM_LEVELS[zoomIndex];
+            document.getElementById('zoom-level-label').textContent = zoom.label;
 
-                // Get the start of the week for chosen selectedDate (Monday first)
-                const curr = new Date(selectedDate);
-                const day = curr.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
-                const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
-                const startOfWeek = new Date(curr.setDate(diff));
+            // Header label reflects the visible range's span
+            const rangeStart = new Date(timelineAnchorDate);
+            const rangeEnd = new Date(timelineAnchorDate);
+            rangeEnd.setDate(rangeEnd.getDate() + zoom.visibleDays - 1);
+            const optFormat = { month: 'short', day: 'numeric' };
+            const sameMonth = rangeStart.getMonth() === rangeEnd.getMonth() && rangeStart.getFullYear() === rangeEnd.getFullYear();
+            document.getElementById('middle-view-header').textContent = sameMonth
+                ? `${rangeStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()}`
+                : `${rangeStart.toLocaleDateString('en-US', optFormat).toUpperCase()} – ${rangeEnd.toLocaleDateString('en-US', optFormat).toUpperCase()}`;
 
-                // Render week header range label
-                const endOfWeek = new Date(startOfWeek);
-                endOfWeek.setDate(endOfWeek.getDate() + 6);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
-                const optFormat = { month: 'short', day: 'numeric' };
-                document.getElementById('middle-view-header').textContent = `Workouts: Week of ${startOfWeek.toLocaleDateString('en-US', optFormat)} - ${endOfWeek.toLocaleDateString('en-US', optFormat)}`;
+            for (let i = 0; i < zoom.visibleDays; i++) {
+                const d = new Date(timelineAnchorDate);
+                d.setDate(d.getDate() + i);
 
-                for (let i = 0; i < 7; i++) {
-                    const d = new Date(startOfWeek);
-                    d.setDate(startOfWeek.getDate() + i);
+                const dayName = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                const dayNum = d.getDate();
+                const dayStr = toLocalDateStr(d);
+                const isSelected = d.toDateString() === selectedDate.toDateString();
+                const isToday = d.toDateString() === today.toDateString();
+                const isWeekend = d.getDay() === 0 || d.getDay() === 6;
 
-                    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-                    const dayNum = d.getDate();
-                    const dayStr = toLocalDateStr(d);
-                    const isSelected = d.toDateString() === selectedDate.toDateString();
+                const daySessions = trainingSessions.filter(s => s.date === dayStr);
 
-                    const daySessions = trainingSessions.filter(s => s.date === dayStr);
-
-                    // Create Column Element
-                    const col = document.createElement('div');
-                    let colClass = "flex flex-col gap-2 p-2.5 rounded-xl border transition-all cursor-pointer h-full min-h-[220px] ";
-                    if (isSelected) {
-                        colClass += "bg-zinc-50 border-zinc-950 ring-1 ring-zinc-950/20";
-                    } else {
-                        colClass += "bg-white border-zinc-100 hover:border-zinc-300";
-                    }
-                    col.className = colClass;
-                    col.onclick = () => selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
-
-                    const colHeader = document.createElement('div');
-                    colHeader.className = "text-center pb-2 border-b border-zinc-100/50 sticky top-0 bg-inherit z-10";
-                    colHeader.innerHTML = `
-                        <p class="text-[9px] font-bold ${isSelected ? 'text-zinc-950' : 'text-zinc-400'} uppercase tracking-wider">${dayName}</p>
-                        <p class="text-sm font-extrabold mt-0.5 ${isSelected ? 'text-zinc-950' : 'text-zinc-800'}">${dayNum}</p>
-                    `;
-                    col.appendChild(colHeader);
-
-                    const sessionsWrapper = document.createElement('div');
-                    sessionsWrapper.className = "flex-grow flex flex-col gap-1.5 justify-between min-h-[120px]";
-
-                    if (daySessions.length === 0) {
-                        // Empty slot to quick-add
-                        const addCard = document.createElement('div');
-                        addCard.className = "flex-grow flex items-center justify-center border border-dashed border-zinc-200 hover:border-zinc-400 rounded-lg h-24 hover:bg-zinc-50/50 transition-all cursor-pointer text-zinc-300 hover:text-zinc-500";
-                        addCard.title = `Add workout for ${dayName} ${dayNum}`;
-                        addCard.onclick = (e) => {
-                            e.stopPropagation();
-                            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
-                            triggerAddSessionModal();
-                        };
-                        addCard.innerHTML = `<span class="text-sm font-light">+</span>`;
-                        sessionsWrapper.appendChild(addCard);
-                    } else {
-                        const sessionsListInner = document.createElement('div');
-                        sessionsListInner.className = "space-y-1.5 flex-grow";
-
-                        daySessions.forEach(s => {
-                            const totalDuration = s.blocks.reduce((acc, b) => acc + blockTotalMinutes(b), 0);
-
-                            let sportIconName = 'footprints';
-                            let iconColor = 'border-emerald-100 bg-emerald-50 text-emerald-800';
-                            if (s.sport_type === 'run') { sportIconName = 'footprints'; iconColor = 'border-emerald-100 bg-emerald-50 text-emerald-800'; }
-                            else if (s.sport_type === 'bike') { sportIconName = 'bike'; iconColor = 'border-blue-100 bg-blue-50 text-blue-800'; }
-                            else if (s.sport_type === 'swim') { sportIconName = 'waves'; iconColor = 'border-sky-100 bg-sky-50 text-sky-800'; }
-                            else if (s.sport_type === 'xc ski') { sportIconName = 'mountain-snow'; iconColor = 'border-rose-100 bg-rose-50 text-rose-800'; }
-                            else if (s.sport_type === 'backcountry ski') { sportIconName = 'mountain-snow'; iconColor = 'border-amber-100 bg-amber-50 text-amber-800'; }
-
-                            const sessCard = document.createElement('div');
-                            sessCard.className = `p-2 rounded-lg border text-[10px] leading-snug ${iconColor} hover:shadow-sm transition-all`;
-                            if (s.description) sessCard.title = s.description;
-                            sessCard.innerHTML = `
-                                <div class="flex items-center justify-between font-bold">
-                                    <span class="uppercase tracking-wider text-[8px]">${s.sport_type.split(' ')[0]}</span>
-                                    <i data-lucide="${sportIconName}" class="w-3 h-3"></i>
-                                </div>
-                                <div class="mt-1 font-extrabold text-zinc-900">${totalDuration}m</div>
-                                <div class="text-[8px] opacity-75 mt-0.5">${s.time}</div>
-                                ${s.description ? `<div class="text-[8px] opacity-90 mt-0.5 truncate font-medium">${escapeHtml(s.description)}</div>` : ''}
-                            `;
-                            sessionsListInner.appendChild(sessCard);
-                        });
-                        sessionsWrapper.appendChild(sessionsListInner);
-
-                        // Micro add button below workouts
-                        const quickAddBtn = document.createElement('button');
-                        quickAddBtn.type = 'button';
-                        quickAddBtn.className = "w-full py-1 text-[8px] text-zinc-400 hover:text-zinc-800 border border-dashed border-zinc-200 hover:border-zinc-300 rounded-md hover:bg-zinc-50 transition-all font-mono";
-                        quickAddBtn.textContent = "+ WORKOUT";
-                        quickAddBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
-                            triggerAddSessionModal();
-                        };
-                        sessionsWrapper.appendChild(quickAddBtn);
-                    }
-
-                    col.appendChild(sessionsWrapper);
-                    container.appendChild(col);
+                const col = document.createElement('div');
+                col.style.width = `${zoom.colWidth}px`;
+                col.style.minWidth = `${zoom.colWidth}px`;
+                let colClass = "flex flex-col gap-1.5 p-2 rounded-lg border transition-all cursor-pointer shrink-0 min-h-[150px] ";
+                if (isSelected) {
+                    colClass += "bg-zinc-900 border-zinc-900 ";
+                } else if (isWeekend) {
+                    colClass += "bg-zinc-100/60 border-zinc-200 hover:border-zinc-400 ";
+                } else {
+                    colClass += "bg-white border-zinc-150 hover:border-zinc-400 ";
                 }
-            } else if (calendarView === 'month') {
-                // Header Label
-                const monthsNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-                document.getElementById('middle-view-header').textContent = `Workouts: ${monthsNames[activeMonthYear.month]} ${activeMonthYear.year}`;
+                col.className = colClass;
+                col.onclick = () => selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
 
-                // Month Calendar Grid Container configuration
-                container.className = "flex flex-col gap-2 pt-2";
+                const colHeader = document.createElement('div');
+                colHeader.className = "flex items-baseline justify-between gap-1 pb-1.5 border-b font-mono " + (isSelected ? "border-zinc-700" : "border-zinc-100");
+                colHeader.innerHTML = `
+                    <span class="text-[9px] font-bold tracking-wider ${isSelected ? 'text-zinc-400' : 'text-zinc-400'}">${dayName}</span>
+                    <span class="text-xs font-bold flex items-center gap-1 ${isSelected ? 'text-white' : isToday ? 'text-zinc-900' : 'text-zinc-600'}">
+                        ${dayNum}${isToday ? '<span class="w-1 h-1 rounded-full bg-emerald-500 inline-block"></span>' : ''}
+                    </span>
+                `;
+                col.appendChild(colHeader);
 
-                // Day of week subheaders
-                const dayHeaderGrid = document.createElement('div');
-                dayHeaderGrid.className = "grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-zinc-400 uppercase tracking-wider py-1 border-b border-zinc-100/60";
-                const daysOfWeek = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-                daysOfWeek.forEach(day => {
-                    const cell = document.createElement('div');
-                    cell.textContent = day;
-                    dayHeaderGrid.appendChild(cell);
-                });
-                container.appendChild(dayHeaderGrid);
+                const sessionsWrapper = document.createElement('div');
+                sessionsWrapper.className = "flex-grow flex flex-col gap-1 overflow-hidden";
 
-                const gridContainer = document.createElement('div');
-                gridContainer.className = "grid grid-cols-7 gap-2 bg-zinc-50 p-2 rounded-2xl border border-zinc-200/50";
-
-                // We compute the spacer days
-                const firstDayOfMonth = new Date(activeMonthYear.year, activeMonthYear.month, 1);
-                let startDayCode = firstDayOfMonth.getDay() - 1; // Convert so Mo is 0, Tu is 1 ... Su is 6
-                if (startDayCode === -1) startDayCode = 6;
-
-                const daysInMonth = new Date(activeMonthYear.year, activeMonthYear.month + 1, 0).getDate();
-
-                // Spacer boxes
-                for (let i = 0; i < startDayCode; i++) {
-                    const blankCell = document.createElement('div');
-                    blankCell.className = "bg-white/40 border border-transparent rounded-xl h-20 min-h-[75px] opacity-20";
-                    gridContainer.appendChild(blankCell);
-                }
-
-                // Month cells
-                for (let day = 1; day <= daysInMonth; day++) {
-                    const cellDate = new Date(activeMonthYear.year, activeMonthYear.month, day);
-                    const cellDateStr = toLocalDateStr(cellDate);
-                    const daySessions = trainingSessions.filter(s => s.date === cellDateStr);
-                    const isSelected = cellDate.toDateString() === selectedDate.toDateString();
-
-                    const dayCell = document.createElement('div');
-                    let cellClass = "bg-white border rounded-xl p-2 flex flex-col justify-between cursor-pointer hover:border-zinc-300 hover:shadow-xs transition-all h-20 min-h-[75px] ";
-                    if (isSelected) {
-                        cellClass += "border-zinc-950 ring-1 ring-zinc-950/20 shadow-sm";
-                    } else {
-                        cellClass += "border-zinc-100";
-                    }
-                    dayCell.className = cellClass;
-                    dayCell.onclick = () => selectCalendarDate(activeMonthYear.year, activeMonthYear.month, day);
-
-                    // Cell Top bar (Day number + optional "+" quick add)
-                    const cellTop = document.createElement('div');
-                    cellTop.className = "flex justify-between items-center";
-
-                    const dayNumSpan = document.createElement('span');
-                    dayNumSpan.className = `text-[10px] font-mono font-extrabold ${isSelected ? 'text-zinc-950' : 'text-zinc-500'}`;
-                    dayNumSpan.textContent = day;
-                    cellTop.appendChild(dayNumSpan);
-
-                    const quickAddBtn = document.createElement('span');
-                    quickAddBtn.className = "text-[9px] text-zinc-350 hover:text-zinc-950 font-bold px-1 transition-colors";
-                    quickAddBtn.textContent = "+";
-                    quickAddBtn.onclick = (e) => {
+                if (daySessions.length === 0) {
+                    const addCard = document.createElement('div');
+                    addCard.className = `flex-grow flex items-center justify-center rounded-md transition-all cursor-pointer text-[10px] font-mono ${isSelected ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-300 hover:text-zinc-500'}`;
+                    addCard.title = `Add session — ${dayName} ${dayNum}`;
+                    addCard.onclick = (e) => {
                         e.stopPropagation();
-                        selectCalendarDate(activeMonthYear.year, activeMonthYear.month, day);
+                        selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
                         triggerAddSessionModal();
                     };
-                    cellTop.appendChild(quickAddBtn);
-
-                    dayCell.appendChild(cellTop);
-
-                    // Sessions rendering zone
-                    const badgeContainer = document.createElement('div');
-                    badgeContainer.className = "flex-grow flex flex-col justify-end gap-1 overflow-hidden mt-1";
-
-                    if (daySessions.length > 0) {
-                        daySessions.slice(0, 2).forEach(s => {
-                            const totalDuration = s.blocks.reduce((acc, b) => acc + blockTotalMinutes(b), 0);
-
-                            let badgeStyle = "bg-zinc-100 text-zinc-700";
-                            if (s.sport_type === 'run') badgeStyle = "bg-emerald-50 text-emerald-800 border-emerald-100";
-                            else if (s.sport_type === 'bike') badgeStyle = "bg-blue-50 text-blue-800 border-blue-100";
-                            else if (s.sport_type === 'swim') badgeStyle = "bg-sky-50 text-sky-800 border-sky-100";
-                            else if (s.sport_type === 'xc ski') badgeStyle = "bg-rose-50 text-rose-800 border-rose-100";
-                            else if (s.sport_type === 'backcountry ski') badgeStyle = "bg-amber-50 text-amber-800 border-amber-100";
-
-                            const badge = document.createElement('div');
-                            badge.className = `text-[7px] font-bold py-0.5 px-1 rounded border leading-tight truncate tracking-tight ${badgeStyle}`;
-                            const sportLabel = `${s.sport_type.split(' ')[0].toUpperCase()} ${totalDuration}m`;
-                            badge.textContent = s.description ? `${sportLabel} · ${s.description}` : sportLabel;
-                            const tooltipParts = [s.discipline || s.sport_type, s.description].filter(Boolean);
-                            if (tooltipParts.length > 0) badge.title = tooltipParts.join(' — ');
-                            badgeContainer.appendChild(badge);
-                        });
-
-                        if (daySessions.length > 2) {
-                            const bonus = document.createElement('div');
-                            bonus.className = "text-[7px] text-zinc-400 font-semibold self-end";
-                            bonus.textContent = `+${daySessions.length - 2} more`;
-                            badgeContainer.appendChild(bonus);
-                        }
-                    } else {
-                        // Ambient empty cell spacer
-                        const span = document.createElement('span');
-                        span.className = "h-3";
-                        badgeContainer.appendChild(span);
-                    }
-
-                    dayCell.appendChild(badgeContainer);
-                    gridContainer.appendChild(dayCell);
+                    addCard.textContent = "+";
+                    sessionsWrapper.appendChild(addCard);
+                } else {
+                    daySessions.forEach(s => {
+                        sessionsWrapper.appendChild(buildTimelineSessionCard(s, zoom.detail, isSelected));
+                    });
                 }
 
-                container.appendChild(gridContainer);
+                col.appendChild(sessionsWrapper);
+                container.appendChild(col);
             }
 
             lucide.createIcons();
+        }
+
+        // Builds a single session card for the timeline, with detail level
+        // controlled by the current zoom. Per the user's design rule: cards
+        // show discipline (type) + description only — never time/start time.
+        function buildTimelineSessionCard(s, detailLevel, parentSelected) {
+            const displayLabel = (s.discipline && s.discipline.length > 0) ? s.discipline : s.sport_type;
+            const card = document.createElement('div');
+            card.onclick = (e) => e.stopPropagation();
+            const tooltipParts = [displayLabel, s.description].filter(Boolean);
+            card.title = tooltipParts.join(' — ');
+
+            const baseBorder = parentSelected ? 'border-zinc-700 bg-zinc-800' : 'border-zinc-150 bg-zinc-50';
+
+            if (detailLevel === 'minimal') {
+                // 30-day zoom: a single thin tag, label only
+                card.className = `px-1 py-0.5 rounded text-[7px] font-mono font-bold uppercase truncate border ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-600'}`;
+                card.textContent = displayLabel.split(' ')[0];
+            } else if (detailLevel === 'compact') {
+                // 14-day zoom: discipline label, description as tooltip only
+                card.className = `px-1.5 py-1 rounded-md text-[8px] font-mono border ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-700'} space-y-0.5`;
+                card.innerHTML = `
+                    <div class="font-bold uppercase tracking-tight truncate">${escapeHtml(displayLabel)}</div>
+                    ${s.description ? `<div class="truncate opacity-70">${escapeHtml(s.description)}</div>` : ''}
+                `;
+            } else {
+                // 'normal' (7d) and 'full' (3d): discipline + full description
+                card.className = `px-2 py-1.5 rounded-md text-[10px] border ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-700'} space-y-0.5 hover:shadow-sm transition-all`;
+                card.innerHTML = `
+                    <div class="font-bold font-mono uppercase tracking-tight ${parentSelected ? 'text-white' : 'text-zinc-900'}">${escapeHtml(displayLabel)}</div>
+                    ${s.description ? `<div class="leading-snug ${parentSelected ? 'text-zinc-300' : 'text-zinc-500'}">${escapeHtml(s.description)}</div>` : ''}
+                `;
+            }
+            return card;
+        }
+
+        function adjustZoom(direction) {
+            const newIndex = zoomIndex + direction;
+            if (newIndex < 0 || newIndex >= ZOOM_LEVELS.length) return;
+            zoomIndex = newIndex;
+            renderTimeline();
+        }
+
+        function jumpToToday() {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            timelineAnchorDate = new Date(today);
+            selectCalendarDate(today.getFullYear(), today.getMonth(), today.getDate());
+        }
+
+        function shiftTimeline(dayDelta) {
+            timelineAnchorDate.setDate(timelineAnchorDate.getDate() + dayDelta);
+            renderTimeline();
+        }
+
+        // Wire scroll-wheel interaction once the DOM is ready: plain scroll
+        // pans the timeline through time, Ctrl/Cmd+scroll zooms — mirroring
+        // the pan/zoom feel of a spreadsheet canvas without needing a full
+        // gesture library.
+        function initTimelineScrollHandlers() {
+            const scrollArea = document.getElementById('timeline-scroll-area');
+            if (!scrollArea) return;
+            scrollArea.addEventListener('wheel', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    adjustZoom(e.deltaY < 0 ? -1 : 1);
+                } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                    // Vertical wheel scroll (most mice/trackpads default to
+                    // this) also pans the timeline through days, since there
+                    // is no vertical content to scroll within the canvas.
+                    e.preventDefault();
+                    const daysPerNotch = Math.max(1, Math.round(ZOOM_LEVELS[zoomIndex].visibleDays / 7));
+                    shiftTimeline(e.deltaY > 0 ? daysPerNotch : -daysPerNotch);
+                }
+            }, { passive: false });
         }
 
         // --- TOTALS CALCULATOR ---
@@ -813,37 +762,29 @@
             const container = document.getElementById('totals-container');
             container.innerHTML = '';
 
-            let filterRangeTitle = "This Week";
             let totalMin = 0;
             let sportsDist = { 'run': 0, 'bike': 0, 'swim': 0, 'xc ski': 0, 'backcountry ski': 0 };
             let sportMinutes = { 'run': 0, 'bike': 0, 'swim': 0, 'xc ski': 0, 'backcountry ski': 0 };
 
+            // Totals always reflect the calendar week (Mon–Sun) containing
+            // the selected day — this stays meaningful and stable regardless
+            // of how zoomed in/out the timeline canvas currently is.
+            const curr = new Date(selectedDate);
+            const day = curr.getDay();
+            const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
+            const startOfWeek = new Date(curr.setDate(diff));
+            startOfWeek.setHours(0, 0, 0, 0);
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(endOfWeek.getDate() + 6);
+            endOfWeek.setHours(23, 59, 59, 999);
+
             let listToCalc = [];
-            if (calendarView === 'week') {
-                const curr = new Date(selectedDate);
-                const day = curr.getDay();
-                const diff = curr.getDate() - day + (day === 0 ? -6 : 1);
-                const startOfWeek = new Date(curr.setDate(diff));
-                startOfWeek.setHours(0, 0, 0, 0);
-                const endOfWeek = new Date(startOfWeek);
-                endOfWeek.setDate(endOfWeek.getDate() + 6);
-                endOfWeek.setHours(23, 59, 59, 999);
+            trainingSessions.forEach(s => {
+                const sd = parseLocalDateStr(s.date);
+                if (sd >= startOfWeek && sd <= endOfWeek) listToCalc.push(s);
+            });
 
-                trainingSessions.forEach(s => {
-                    const sd = parseLocalDateStr(s.date);
-                    if (sd >= startOfWeek && sd <= endOfWeek) listToCalc.push(s);
-                });
-            } else {
-                filterRangeTitle = "This Month";
-                trainingSessions.forEach(s => {
-                    const sd = parseLocalDateStr(s.date);
-                    if (sd.getMonth() === activeMonthYear.month && sd.getFullYear() === activeMonthYear.year) {
-                        listToCalc.push(s);
-                    }
-                });
-            }
-
-            document.getElementById('totals-header-label').textContent = `${filterRangeTitle}'s Totals`;
+            document.getElementById('totals-header-label').textContent = `This Week's Totals`;
 
             listToCalc.forEach(s => {
                 s.blocks.forEach(b => {
@@ -1096,13 +1037,23 @@
             document.getElementById('modal-blocks-container').innerHTML = '';
 
             (session.blocks || []).forEach(b => {
+                // The database's repeat object has no `enabled` flag — that's
+                // a modal-only UI flag, never persisted (saveSessionFromModal
+                // builds {reps, rest_sec, customized, per_rep} with no
+                // `enabled` key). Without deriving it here, repeat.enabled
+                // comes back undefined and the whole repeat section renders
+                // collapsed/unchecked even when reps/per_rep data exists.
+                const loadedRepeat = b.repeat
+                    ? { ...b.repeat, enabled: (b.repeat.reps || 1) > 1 }
+                    : { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [] };
+
                 addBlockToModalForm({
                     type: b.type,
                     intensity: b.intensity,
                     target_hr: b.target_hr,
                     time_min: b.time_min,
                     distance_km: b.distance_km ?? '',
-                    repeat: b.repeat ? JSON.parse(JSON.stringify(b.repeat)) : { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [] }
+                    repeat: JSON.parse(JSON.stringify(loadedRepeat))
                 });
             });
 
@@ -1446,7 +1397,7 @@
         // Global Render Orchestration
         function renderAll() {
             renderCalendar();
-            renderMiddleSessionsLog();
+            renderTimeline();
             renderTotals();
             renderRightSidebar();
         }
@@ -1455,8 +1406,9 @@
         // (required since this is now a module script, which doesn't
         // leak declarations onto window automatically)
         window.switchTab = switchTab;
-        window.setCalendarView = setCalendarView;
         window.navigateMonth = navigateMonth;
+        window.adjustZoom = adjustZoom;
+        window.jumpToToday = jumpToToday;
         window.saveHRZonesFromSettings = saveHRZonesFromSettings;
         window.triggerAddSessionModal = triggerAddSessionModal;
         window.openEditSessionModal = openEditSessionModal;
