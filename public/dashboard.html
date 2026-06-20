@@ -326,7 +326,7 @@
             { label: 'XL', rowHeight: 110, detail: 'full' },
             { label: 'M',  rowHeight: 64,  detail: 'normal' },
             { label: 'S',  rowHeight: 40,  detail: 'compact' },
-            { label: 'XS', rowHeight: 24,  detail: 'minimal' }
+            { label: 'XS', rowHeight: 30,  detail: 'minimal' }
         ];
         const RENDER_DAYS = 90; // how many days ahead of the anchor to render into the DOM
 
@@ -644,7 +644,9 @@
                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                 const isFirstOfMonth = d.getDate() === 1;
 
-                const daySessions = trainingSessions.filter(s => s.date === dayStr);
+                const daySessions = trainingSessions
+                    .filter(s => s.date === dayStr)
+                    .sort((a, b) => a.time.localeCompare(b.time));
 
                 // A thin month divider helps orientation when scrolling
                 // through many days at once, especially at dense zoom levels.
@@ -694,15 +696,16 @@
                 sessionsWrapper.className = "flex-grow flex items-center gap-1.5 flex-wrap py-1.5 overflow-hidden min-w-0";
 
                 if (daySessions.length === 0) {
-                    const addCard = document.createElement('span');
-                    addCard.className = `text-[11px] font-mono transition-all ${isSelected ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-300 hover:text-zinc-500'}`;
+                    const addCard = document.createElement('button');
+                    addCard.type = 'button';
+                    addCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
                     addCard.title = `Add session — ${dayName} ${dayNum}`;
                     addCard.onclick = (e) => {
                         e.stopPropagation();
                         selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
                         triggerAddSessionModal();
                     };
-                    addCard.textContent = zoom.detail === 'minimal' ? '·' : '+ add';
+                    addCard.textContent = "+";
                     sessionsWrapper.appendChild(addCard);
                 } else {
                     daySessions.forEach(s => {
@@ -712,10 +715,12 @@
                     // Always-present control to add another session to a day
                     // that already has one or more — without this, there was
                     // no way to add a second session directly from a row.
+                    // Kept at a consistent, comfortably tappable size at
+                    // every zoom level rather than shrinking it down when
+                    // zoomed out, since that made it nearly invisible.
                     const addMoreCard = document.createElement('button');
                     addMoreCard.type = 'button';
-                    const sizeClass = zoom.detail === 'minimal' ? 'w-3.5 h-3.5 text-[10px]' : 'w-5 h-5 text-xs';
-                    addMoreCard.className = `shrink-0 ${sizeClass} flex items-center justify-center rounded-md border font-bold transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
+                    addMoreCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
                     addMoreCard.title = `Add another session — ${dayName} ${dayNum}`;
                     addMoreCard.onclick = (e) => {
                         e.stopPropagation();
@@ -810,8 +815,7 @@
             container.innerHTML = '';
 
             let totalMin = 0;
-            let sportsDist = { 'run': 0, 'bike': 0, 'swim': 0, 'xc ski': 0, 'backcountry ski': 0 };
-            let sportMinutes = { 'run': 0, 'bike': 0, 'swim': 0, 'xc ski': 0, 'backcountry ski': 0 };
+            let zoneMinutes = { easy: 0, ap1: 0, ap2: 0, ap3: 0 };
 
             // Totals always reflect the calendar week (Mon–Sun) containing
             // the selected day — this stays meaningful and stable regardless
@@ -833,15 +837,15 @@
 
             document.getElementById('totals-header-label').textContent = `This Week's Totals`;
 
+            // Sum planned minutes per HR zone across every sport combined —
+            // a block's repeat count is already folded into blockTotalMinutes.
             listToCalc.forEach(s => {
                 s.blocks.forEach(b => {
                     const blockMin = blockTotalMinutes(b);
-                    const blockDist = blockTotalDistance(b);
                     totalMin += blockMin;
-                    if (blockDist) {
-                        sportsDist[s.sport_type] += blockDist;
+                    if (zoneMinutes.hasOwnProperty(b.intensity)) {
+                        zoneMinutes[b.intensity] += blockMin;
                     }
-                    sportMinutes[s.sport_type] += blockMin;
                 });
             });
 
@@ -857,29 +861,47 @@
             `;
             container.appendChild(headDiv);
 
-            // Add breakdown per sport
-            const sportsList = ['run', 'bike', 'swim', 'xc ski', 'backcountry ski'];
-            sportsList.forEach(sport => {
-                const dist = sportsDist[sport];
-                const mins = sportMinutes[sport];
+            // Time planned per HR zone, combined across every sport, as a
+            // proportional bar plus a per-zone minute readout.
+            const ZONE_META = [
+                { key: 'easy', label: 'Easy', color: 'bg-emerald-400' },
+                { key: 'ap1',  label: 'AP1',  color: 'bg-blue-400' },
+                { key: 'ap2',  label: 'AP2',  color: 'bg-amber-400' },
+                { key: 'ap3',  label: 'AP3',  color: 'bg-red-400' }
+            ];
 
-                if (mins > 0 || dist > 0) {
-                    const card = document.createElement('div');
-                    card.className = "flex items-center justify-between text-xs p-2.5 rounded-lg border border-zinc-100 bg-white/70 shadow-sm";
+            if (totalMin > 0) {
+                const barWrap = document.createElement('div');
+                barWrap.className = "flex h-2 rounded-full overflow-hidden bg-zinc-100 mb-1";
+                ZONE_META.forEach(z => {
+                    const pct = totalMin > 0 ? (zoneMinutes[z.key] / totalMin) * 100 : 0;
+                    if (pct <= 0) return;
+                    const seg = document.createElement('div');
+                    seg.className = z.color;
+                    seg.style.width = `${pct}%`;
+                    seg.title = `${z.label}: ${zoneMinutes[z.key]} min`;
+                    barWrap.appendChild(seg);
+                });
+                container.appendChild(barWrap);
+            }
 
-                    let sportLabel = sport.charAt(0).toUpperCase() + sport.slice(1);
-                    card.innerHTML = `
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full ${sport === 'run' ? 'bg-emerald-400' : sport === 'bike' ? 'bg-blue-400' : 'bg-orange-400'}"></span>
-                            <span class="font-medium text-zinc-700">${sportLabel}</span>
-                        </div>
-                        <div class="text-right font-mono text-zinc-800 space-y-0.5">
-                            <div class="font-bold">${mins} mins</div>
-                            ${dist ? `<div class="text-[9px] text-zinc-400">${dist.toFixed(1)} km</div>` : ''}
-                        </div>
-                    `;
-                    container.appendChild(card);
-                }
+            ZONE_META.forEach(z => {
+                const mins = zoneMinutes[z.key];
+                if (mins <= 0) return;
+                const card = document.createElement('div');
+                card.className = "flex items-center justify-between text-xs p-2.5 rounded-lg border border-zinc-100 bg-white/70 shadow-sm";
+                const pct = totalMin > 0 ? Math.round((mins / totalMin) * 100) : 0;
+                card.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full ${z.color}"></span>
+                        <span class="font-medium text-zinc-700">${z.label}</span>
+                    </div>
+                    <div class="text-right font-mono text-zinc-800 space-y-0.5">
+                        <div class="font-bold">${mins} mins</div>
+                        <div class="text-[9px] text-zinc-400">${pct}% of week</div>
+                    </div>
+                `;
+                container.appendChild(card);
             });
 
             if (totalMin === 0) {
@@ -903,7 +925,9 @@
 
             // Filter sessions for matching select date
             const targetDateStr = toLocalDateStr(selectedDate);
-            const matched = trainingSessions.filter(s => s.date === targetDateStr);
+            const matched = trainingSessions
+                .filter(s => s.date === targetDateStr)
+                .sort((a, b) => a.time.localeCompare(b.time));
 
             if (matched.length === 0) {
                 daySessionsList.innerHTML = `
