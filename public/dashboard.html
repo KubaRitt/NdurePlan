@@ -125,7 +125,7 @@
                             <h2 class="text-sm font-bold text-zinc-900 font-mono tracking-tight">
                                 <span id="middle-view-header">JUN 2026</span>
                             </h2>
-                            <p class="text-[11px] text-zinc-400 font-mono">scroll to move &middot; ctrl+scroll or +/&minus; to zoom</p>
+                            <p class="text-[11px] text-zinc-400 font-mono">scroll to move &middot; +/&minus; to zoom density</p>
                         </div>
 
                         <!-- Zoom & navigation controls -->
@@ -134,21 +134,21 @@
                                 TODAY
                             </button>
                             <div class="flex items-center gap-0.5 bg-zinc-100/80 border border-zinc-200/40 p-1 rounded-lg">
-                                <button onclick="adjustZoom(-1)" class="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded transition-all" title="Zoom out">
+                                <button onclick="adjustZoom(-1)" class="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded transition-all" title="Zoom out (denser)">
                                     <i data-lucide="minus" class="w-3 h-3"></i>
                                 </button>
-                                <span id="zoom-level-label" class="text-[10px] font-mono font-bold text-zinc-500 w-10 text-center select-none">7d</span>
-                                <button onclick="adjustZoom(1)" class="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded transition-all" title="Zoom in">
+                                <span id="zoom-level-label" class="text-[10px] font-mono font-bold text-zinc-500 w-10 text-center select-none">M</span>
+                                <button onclick="adjustZoom(1)" class="w-6 h-6 flex items-center justify-center text-zinc-500 hover:text-zinc-900 hover:bg-white rounded transition-all" title="Zoom in (more detail)">
                                     <i data-lucide="plus" class="w-3 h-3"></i>
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Horizontally scrollable day canvas -->
-                    <div id="timeline-scroll-area" class="overflow-x-auto overflow-y-hidden scrollbar-none -mx-1 px-1">
-                        <div id="timeline-days-container" class="flex gap-1.5 pt-1 pb-2">
-                            <!-- Filled by JS: one column per visible day -->
+                    <!-- Vertically scrollable day canvas -->
+                    <div id="timeline-scroll-area" class="overflow-y-auto overflow-x-hidden scrollbar-none" style="max-height: min(640px, 70vh);">
+                        <div id="timeline-days-container" class="flex flex-col gap-1">
+                            <!-- Filled by JS: one row per visible day -->
                         </div>
                     </div>
 
@@ -310,21 +310,25 @@
 
         // CLIENT STATE MANAGEMENT
         let activeTab = 'plan';
-        let timelineAnchorDate = new Date(); // leftmost visible day on the timeline; reset on load
+        let timelineAnchorDate = new Date(); // topmost visible day on the timeline; reset on load
         let zoomIndex = 1; // index into ZOOM_LEVELS
         let selectedDate = new Date(); // reset to today on load
         let activeMonthYear = { month: new Date().getMonth(), year: new Date().getFullYear() };
 
-        // Discrete zoom steps for the timeline canvas. `visibleDays` controls
-        // how many day-columns are rendered into the scroll area at once;
-        // `colWidth` is each column's pixel width; `detail` controls how much
-        // session info is shown per card at that density.
+        // Discrete zoom steps for the vertical timeline. `rowHeight` sets
+        // each day-row's min-height in px; `detail` controls how much
+        // session info fits in a row's card at that density. A fixed buffer
+        // of days is rendered (RENDER_DAYS) and the scroll container itself
+        // — sized by rowHeight × visible rows — determines how many show
+        // on screen at once, since rows scroll vertically rather than the
+        // page swapping a fixed day count in/out.
         const ZOOM_LEVELS = [
-            { label: '3d',  visibleDays: 3,  colWidth: 220, detail: 'full' },
-            { label: '7d',  visibleDays: 7,  colWidth: 132, detail: 'normal' },
-            { label: '14d', visibleDays: 14, colWidth: 84,  detail: 'compact' },
-            { label: '30d', visibleDays: 30, colWidth: 48,  detail: 'minimal' }
+            { label: 'XL', rowHeight: 110, detail: 'full' },
+            { label: 'M',  rowHeight: 64,  detail: 'normal' },
+            { label: 'S',  rowHeight: 40,  detail: 'compact' },
+            { label: 'XS', rowHeight: 24,  detail: 'minimal' }
         ];
+        const RENDER_DAYS = 90; // how many days ahead of the anchor to render into the DOM
 
         // HR Zones Matrix state (loaded from Supabase profile on page load)
         let hrZones = {
@@ -433,6 +437,7 @@
 
             initTimelineScrollHandlers();
             renderAll();
+            scrollSelectedRowIntoView();
         });
 
         // TABS NAVIGATION (Plan / Settings view switches)
@@ -473,20 +478,34 @@
         function selectCalendarDate(year, month, day) {
             selectedDate = new Date(year, month, day);
 
-            // Re-anchor the timeline if the newly selected date would fall
-            // outside the currently visible range, so picking a date from
-            // the mini-calendar always scrolls the canvas into view.
-            const zoom = ZOOM_LEVELS[zoomIndex];
-            const visibleEnd = new Date(timelineAnchorDate);
-            visibleEnd.setDate(visibleEnd.getDate() + zoom.visibleDays - 1);
-            if (selectedDate < timelineAnchorDate || selectedDate > visibleEnd) {
+            // Re-anchor the timeline only if the selected date falls outside
+            // the currently rendered day buffer; otherwise just scroll the
+            // existing list so the selected row comes into view.
+            const bufferEnd = new Date(timelineAnchorDate);
+            bufferEnd.setDate(bufferEnd.getDate() + RENDER_DAYS - 1);
+            if (selectedDate < timelineAnchorDate || selectedDate > bufferEnd) {
                 timelineAnchorDate = new Date(selectedDate);
+                timelineAnchorDate.setDate(timelineAnchorDate.getDate() - 1);
             }
 
             renderCalendar();
             renderRightSidebar();
             renderTotals();
             renderTimeline();
+            scrollSelectedRowIntoView();
+        }
+
+        // Scrolls the timeline's internal scroll container so the row for
+        // the currently selected day is visible, without affecting the
+        // outer page scroll position.
+        function scrollSelectedRowIntoView() {
+            requestAnimationFrame(() => {
+                const scrollArea = document.getElementById('timeline-scroll-area');
+                const selectedRow = scrollArea ? scrollArea.querySelector('[data-selected="true"]') : null;
+                if (selectedRow) {
+                    selectedRow.scrollIntoView({ block: 'center' });
+                }
+            });
         }
 
         function renderCalendar() {
@@ -597,7 +616,7 @@
             renderAll();
         }
 
-        // --- TIMELINE CANVAS (continuous, zoomable day strip) ---
+        // --- TIMELINE CANVAS (continuous, zoomable vertical day list) ---
         function renderTimeline() {
             const container = document.getElementById('timeline-days-container');
             container.innerHTML = '';
@@ -605,69 +624,85 @@
             const zoom = ZOOM_LEVELS[zoomIndex];
             document.getElementById('zoom-level-label').textContent = zoom.label;
 
-            // Header label reflects the visible range's span
-            const rangeStart = new Date(timelineAnchorDate);
-            const rangeEnd = new Date(timelineAnchorDate);
-            rangeEnd.setDate(rangeEnd.getDate() + zoom.visibleDays - 1);
-            const optFormat = { month: 'short', day: 'numeric' };
-            const sameMonth = rangeStart.getMonth() === rangeEnd.getMonth() && rangeStart.getFullYear() === rangeEnd.getFullYear();
-            document.getElementById('middle-view-header').textContent = sameMonth
-                ? `${rangeStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()}`
-                : `${rangeStart.toLocaleDateString('en-US', optFormat).toUpperCase()} – ${rangeEnd.toLocaleDateString('en-US', optFormat).toUpperCase()}`;
+            // Header label reflects the month of the topmost rendered day
+            document.getElementById('middle-view-header').textContent =
+                timelineAnchorDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase();
 
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            for (let i = 0; i < zoom.visibleDays; i++) {
+            for (let i = 0; i < RENDER_DAYS; i++) {
                 const d = new Date(timelineAnchorDate);
                 d.setDate(d.getDate() + i);
 
                 const dayName = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
                 const dayNum = d.getDate();
+                const monthShort = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
                 const dayStr = toLocalDateStr(d);
                 const isSelected = d.toDateString() === selectedDate.toDateString();
                 const isToday = d.toDateString() === today.toDateString();
                 const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                const isFirstOfMonth = d.getDate() === 1;
 
                 const daySessions = trainingSessions.filter(s => s.date === dayStr);
 
-                const col = document.createElement('div');
-                col.style.width = `${zoom.colWidth}px`;
-                col.style.minWidth = `${zoom.colWidth}px`;
-                let colClass = "flex flex-col gap-1.5 p-2 rounded-lg border transition-all cursor-pointer shrink-0 min-h-[150px] ";
-                if (isSelected) {
-                    colClass += "bg-zinc-900 border-zinc-900 ";
-                } else if (isWeekend) {
-                    colClass += "bg-zinc-100/60 border-zinc-200 hover:border-zinc-400 ";
-                } else {
-                    colClass += "bg-white border-zinc-150 hover:border-zinc-400 ";
+                // A thin month divider helps orientation when scrolling
+                // through many days at once, especially at dense zoom levels.
+                if (isFirstOfMonth && i > 0) {
+                    const divider = document.createElement('div');
+                    divider.className = "text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest pt-3 pb-1 px-1";
+                    divider.textContent = `${d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+                    container.appendChild(divider);
                 }
-                col.className = colClass;
-                col.onclick = () => selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
 
-                const colHeader = document.createElement('div');
-                colHeader.className = "flex items-baseline justify-between gap-1 pb-1.5 border-b font-mono " + (isSelected ? "border-zinc-700" : "border-zinc-100");
-                colHeader.innerHTML = `
-                    <span class="text-[9px] font-bold tracking-wider ${isSelected ? 'text-zinc-400' : 'text-zinc-400'}">${dayName}</span>
-                    <span class="text-xs font-bold flex items-center gap-1 ${isSelected ? 'text-white' : isToday ? 'text-zinc-900' : 'text-zinc-600'}">
-                        ${dayNum}${isToday ? '<span class="w-1 h-1 rounded-full bg-emerald-500 inline-block"></span>' : ''}
-                    </span>
-                `;
-                col.appendChild(colHeader);
+                const row = document.createElement('div');
+                row.style.minHeight = `${zoom.rowHeight}px`;
+                let rowClass = "flex items-stretch gap-2 px-2 rounded-lg border transition-all cursor-pointer ";
+                if (isSelected) {
+                    rowClass += "bg-zinc-900 border-zinc-900 ";
+                } else if (isWeekend) {
+                    rowClass += "bg-zinc-50 border-transparent hover:border-zinc-200 ";
+                } else {
+                    rowClass += "bg-white border-transparent hover:border-zinc-200 ";
+                }
+                row.className = rowClass;
+                if (isSelected) row.setAttribute('data-selected', 'true');
+                row.onclick = () => selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
 
+                // Date column (left, fixed width)
+                const dateCol = document.createElement('div');
+                dateCol.className = "flex items-center gap-2 shrink-0 font-mono py-1.5";
+                dateCol.style.width = zoom.detail === 'minimal' ? '64px' : '54px';
+                dateCol.innerHTML = zoom.detail === 'minimal'
+                    ? `<span class="text-[10px] font-bold ${isSelected ? 'text-white' : isToday ? 'text-zinc-900' : 'text-zinc-500'}">${dayName} ${dayNum}</span>${isToday ? '<span class="w-1 h-1 rounded-full bg-emerald-500 inline-block"></span>' : ''}`
+                    : `
+                        <div class="flex flex-col items-center leading-none">
+                            <span class="text-[9px] font-bold tracking-wider ${isSelected ? 'text-zinc-500' : 'text-zinc-400'}">${dayName}</span>
+                            <span class="text-base font-bold flex items-center gap-1 ${isSelected ? 'text-white' : isToday ? 'text-zinc-900' : 'text-zinc-700'}">${dayNum}</span>
+                            ${isToday ? '<span class="w-1 h-1 rounded-full bg-emerald-500 inline-block mt-0.5"></span>' : ''}
+                        </div>
+                    `;
+                row.appendChild(dateCol);
+
+                // Vertical divider between date column and sessions
+                const divLine = document.createElement('div');
+                divLine.className = `w-px self-stretch my-1.5 ${isSelected ? 'bg-zinc-700' : 'bg-zinc-100'}`;
+                row.appendChild(divLine);
+
+                // Sessions area (right, flexible)
                 const sessionsWrapper = document.createElement('div');
-                sessionsWrapper.className = "flex-grow flex flex-col gap-1 overflow-hidden";
+                sessionsWrapper.className = "flex-grow flex items-center gap-1.5 flex-wrap py-1.5 overflow-hidden min-w-0";
 
                 if (daySessions.length === 0) {
-                    const addCard = document.createElement('div');
-                    addCard.className = `flex-grow flex items-center justify-center rounded-md transition-all cursor-pointer text-[10px] font-mono ${isSelected ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-300 hover:text-zinc-500'}`;
+                    const addCard = document.createElement('span');
+                    addCard.className = `text-[11px] font-mono transition-all ${isSelected ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-300 hover:text-zinc-500'}`;
                     addCard.title = `Add session — ${dayName} ${dayNum}`;
                     addCard.onclick = (e) => {
                         e.stopPropagation();
                         selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
                         triggerAddSessionModal();
                     };
-                    addCard.textContent = "+";
+                    addCard.textContent = zoom.detail === 'minimal' ? '·' : '+ add';
                     sessionsWrapper.appendChild(addCard);
                 } else {
                     daySessions.forEach(s => {
@@ -675,8 +710,8 @@
                     });
                 }
 
-                col.appendChild(sessionsWrapper);
-                container.appendChild(col);
+                row.appendChild(sessionsWrapper);
+                container.appendChild(row);
             }
 
             lucide.createIcons();
@@ -695,22 +730,20 @@
             const baseBorder = parentSelected ? 'border-zinc-700 bg-zinc-800' : 'border-zinc-150 bg-zinc-50';
 
             if (detailLevel === 'minimal') {
-                // 30-day zoom: a single thin tag, label only
-                card.className = `px-1 py-0.5 rounded text-[7px] font-mono font-bold uppercase truncate border ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-600'}`;
+                // XS zoom: a single thin tag, label only — rows are too
+                // short here to fit anything beyond a short word.
+                card.className = `px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase truncate border shrink-0 ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-600'}`;
                 card.textContent = displayLabel.split(' ')[0];
             } else if (detailLevel === 'compact') {
-                // 14-day zoom: discipline label, description as tooltip only
-                card.className = `px-1.5 py-1 rounded-md text-[8px] font-mono border ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-700'} space-y-0.5`;
-                card.innerHTML = `
-                    <div class="font-bold uppercase tracking-tight truncate">${escapeHtml(displayLabel)}</div>
-                    ${s.description ? `<div class="truncate opacity-70">${escapeHtml(s.description)}</div>` : ''}
-                `;
+                // S zoom: discipline label, description as tooltip only
+                card.className = `px-2 py-1 rounded-md text-[10px] font-mono border shrink-0 ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-700'}`;
+                card.innerHTML = `<span class="font-bold uppercase tracking-tight">${escapeHtml(displayLabel)}</span>`;
             } else {
-                // 'normal' (7d) and 'full' (3d): discipline + full description
-                card.className = `px-2 py-1.5 rounded-md text-[10px] border ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-700'} space-y-0.5 hover:shadow-sm transition-all`;
+                // 'normal' (M) and 'full' (XL): discipline + full description
+                card.className = `px-2.5 py-1.5 rounded-md text-[11px] border shrink-0 max-w-[260px] ${baseBorder} ${parentSelected ? 'text-zinc-200' : 'text-zinc-700'} space-y-0.5 hover:shadow-sm transition-all`;
                 card.innerHTML = `
                     <div class="font-bold font-mono uppercase tracking-tight ${parentSelected ? 'text-white' : 'text-zinc-900'}">${escapeHtml(displayLabel)}</div>
-                    ${s.description ? `<div class="leading-snug ${parentSelected ? 'text-zinc-300' : 'text-zinc-500'}">${escapeHtml(s.description)}</div>` : ''}
+                    ${s.description ? `<div class="leading-snug truncate ${parentSelected ? 'text-zinc-300' : 'text-zinc-500'}">${escapeHtml(s.description)}</div>` : ''}
                 `;
             }
             return card;
@@ -727,18 +760,15 @@
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             timelineAnchorDate = new Date(today);
+            timelineAnchorDate.setDate(timelineAnchorDate.getDate() - 1);
             selectCalendarDate(today.getFullYear(), today.getMonth(), today.getDate());
         }
 
-        function shiftTimeline(dayDelta) {
-            timelineAnchorDate.setDate(timelineAnchorDate.getDate() + dayDelta);
-            renderTimeline();
-        }
-
-        // Wire scroll-wheel interaction once the DOM is ready: plain scroll
-        // pans the timeline through time, Ctrl/Cmd+scroll zooms — mirroring
-        // the pan/zoom feel of a spreadsheet canvas without needing a full
-        // gesture library.
+        // Wire scroll-wheel interaction once the DOM is ready. Plain
+        // vertical scroll/swipe simply scrolls the day list (native
+        // behavior, works identically on mobile touch). Ctrl/Cmd+scroll
+        // is kept as an optional desktop shortcut for zoom, but the +/-
+        // buttons are the primary (and only mobile-friendly) zoom control.
         function initTimelineScrollHandlers() {
             const scrollArea = document.getElementById('timeline-scroll-area');
             if (!scrollArea) return;
@@ -746,14 +776,8 @@
                 if (e.ctrlKey || e.metaKey) {
                     e.preventDefault();
                     adjustZoom(e.deltaY < 0 ? -1 : 1);
-                } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                    // Vertical wheel scroll (most mice/trackpads default to
-                    // this) also pans the timeline through days, since there
-                    // is no vertical content to scroll within the canvas.
-                    e.preventDefault();
-                    const daysPerNotch = Math.max(1, Math.round(ZOOM_LEVELS[zoomIndex].visibleDays / 7));
-                    shiftTimeline(e.deltaY > 0 ? daysPerNotch : -daysPerNotch);
                 }
+                // Otherwise let the browser handle normal vertical scrolling.
             }, { passive: false });
         }
 
