@@ -125,11 +125,14 @@
                             <h2 class="text-sm font-bold text-zinc-900 font-mono tracking-tight">
                                 <span id="middle-view-header">JUN 2026</span>
                             </h2>
-                            <p class="text-[11px] text-zinc-400 font-mono">scroll to move &middot; +/&minus; to zoom density</p>
+                            <p class="text-[11px] text-zinc-400 font-mono">scroll up/down for past &amp; future &middot; +/&minus; to zoom density</p>
                         </div>
 
                         <!-- Zoom & navigation controls -->
                         <div class="flex items-center gap-2">
+                            <button onclick="copyLastWeek()" class="px-2.5 py-1.5 text-[11px] font-mono font-semibold rounded-lg border border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400 transition-all flex items-center gap-1.5" title="Duplicate last week's sessions into this week">
+                                <i data-lucide="copy" class="w-3 h-3"></i> COPY LAST WEEK
+                            </button>
                             <button onclick="jumpToToday()" class="px-2.5 py-1.5 text-[11px] font-mono font-semibold rounded-lg border border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400 transition-all">
                                 TODAY
                             </button>
@@ -314,6 +317,7 @@
         let zoomIndex = 1; // index into ZOOM_LEVELS
         let selectedDate = new Date(); // reset to today on load
         let activeMonthYear = { month: new Date().getMonth(), year: new Date().getFullYear() };
+        let quickAddDateStr = null; // YYYY-MM-DD of the day row currently showing the inline quick-add form, or null
 
         // Discrete zoom steps for the vertical timeline. `rowHeight` sets
         // each day-row's min-height in px; `detail` controls how much
@@ -328,7 +332,10 @@
             { label: 'S',  rowHeight: 40,  detail: 'compact' },
             { label: 'XS', rowHeight: 30,  detail: 'minimal' }
         ];
-        const RENDER_DAYS = 90; // how many days ahead of the anchor to render into the DOM
+        let RENDER_DAYS = 90; // how many days from the anchor are currently rendered into the DOM
+        const RENDER_DAYS_DEFAULT = 90; // reset point whenever the view re-anchors (today, date pick)
+        const INFINITE_SCROLL_CHUNK = 30; // days added each time the user scrolls near an edge
+        const INFINITE_SCROLL_MAX = 730; // hard cap so the DOM can't grow unbounded
 
         // HR Zones Matrix state (loaded from Supabase profile on page load)
         let hrZones = {
@@ -486,6 +493,7 @@
             if (selectedDate < timelineAnchorDate || selectedDate > bufferEnd) {
                 timelineAnchorDate = new Date(selectedDate);
                 timelineAnchorDate.setDate(timelineAnchorDate.getDate() - 1);
+                RENDER_DAYS = RENDER_DAYS_DEFAULT;
             }
 
             renderCalendar();
@@ -696,39 +704,47 @@
                 sessionsWrapper.className = "flex-grow flex items-center gap-1.5 flex-wrap py-1.5 overflow-hidden min-w-0";
 
                 if (daySessions.length === 0) {
-                    const addCard = document.createElement('button');
-                    addCard.type = 'button';
-                    addCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
-                    addCard.title = `Add session — ${dayName} ${dayNum}`;
-                    addCard.onclick = (e) => {
-                        e.stopPropagation();
-                        selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
-                        triggerAddSessionModal();
-                    };
-                    addCard.textContent = "+";
-                    sessionsWrapper.appendChild(addCard);
+                    if (quickAddDateStr === dayStr) {
+                        sessionsWrapper.appendChild(buildQuickAddForm(dayStr, isSelected));
+                    } else {
+                        const addCard = document.createElement('button');
+                        addCard.type = 'button';
+                        addCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
+                        addCard.title = `Add session — ${dayName} ${dayNum}`;
+                        addCard.onclick = (e) => {
+                            e.stopPropagation();
+                            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
+                            openQuickAdd(dayStr);
+                        };
+                        addCard.textContent = "+";
+                        sessionsWrapper.appendChild(addCard);
+                    }
                 } else {
                     daySessions.forEach(s => {
                         sessionsWrapper.appendChild(buildTimelineSessionCard(s, zoom.detail, isSelected));
                     });
 
-                    // Always-present control to add another session to a day
-                    // that already has one or more — without this, there was
-                    // no way to add a second session directly from a row.
-                    // Kept at a consistent, comfortably tappable size at
-                    // every zoom level rather than shrinking it down when
-                    // zoomed out, since that made it nearly invisible.
-                    const addMoreCard = document.createElement('button');
-                    addMoreCard.type = 'button';
-                    addMoreCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
-                    addMoreCard.title = `Add another session — ${dayName} ${dayNum}`;
-                    addMoreCard.onclick = (e) => {
-                        e.stopPropagation();
-                        selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
-                        triggerAddSessionModal();
-                    };
-                    addMoreCard.textContent = "+";
-                    sessionsWrapper.appendChild(addMoreCard);
+                    if (quickAddDateStr === dayStr) {
+                        sessionsWrapper.appendChild(buildQuickAddForm(dayStr, isSelected));
+                    } else {
+                        // Always-present control to add another session to a day
+                        // that already has one or more — without this, there was
+                        // no way to add a second session directly from a row.
+                        // Kept at a consistent, comfortably tappable size at
+                        // every zoom level rather than shrinking it down when
+                        // zoomed out, since that made it nearly invisible.
+                        const addMoreCard = document.createElement('button');
+                        addMoreCard.type = 'button';
+                        addMoreCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
+                        addMoreCard.title = `Add another session — ${dayName} ${dayNum}`;
+                        addMoreCard.onclick = (e) => {
+                            e.stopPropagation();
+                            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
+                            openQuickAdd(dayStr);
+                        };
+                        addMoreCard.textContent = "+";
+                        sessionsWrapper.appendChild(addMoreCard);
+                    }
                 }
 
                 row.appendChild(sessionsWrapper);
@@ -777,6 +793,132 @@
             return card;
         }
 
+        // Builds the inline quick-add row: a discipline select plus a
+        // single text field, so adding a session is "pick sport, type a
+        // short label, hit enter" without opening the full modal. The
+        // "…" button hands off to the full modal (with blocks) for anyone
+        // who wants HR zone detail on this particular session.
+        function buildQuickAddForm(dayStr, parentSelected) {
+            const wrap = document.createElement('div');
+            wrap.className = "flex items-center gap-1.5 flex-wrap py-0.5 flex-grow min-w-0";
+            wrap.onclick = (e) => e.stopPropagation();
+
+            const select = document.createElement('select');
+            select.id = 'quick-add-discipline';
+            select.className = `text-[10px] font-mono px-1.5 py-1.5 rounded-md border focus:outline-none focus:ring-1 focus:ring-zinc-900 ${parentSelected ? 'bg-zinc-800 border-zinc-700 text-zinc-200' : 'bg-white border-zinc-200 text-zinc-700'}`;
+            PARENT_SPORTS.forEach(parent => {
+                const group = document.createElement('optgroup');
+                group.label = parent.replace(/\b\w/g, c => c.toUpperCase());
+                DISCIPLINES[parent].forEach(discipline => {
+                    const opt = document.createElement('option');
+                    opt.value = discipline;
+                    opt.textContent = discipline;
+                    group.appendChild(opt);
+                });
+                select.appendChild(group);
+            });
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = 'quick-add-input';
+            input.placeholder = 'e.g. Easy run 10k — Enter to save';
+            input.maxLength = 120;
+            input.className = `flex-grow min-w-[130px] text-[11px] px-2 py-1.5 rounded-md border focus:outline-none focus:ring-1 focus:ring-zinc-900 ${parentSelected ? 'bg-zinc-800 border-zinc-700 text-white placeholder-zinc-500' : 'bg-white border-zinc-200 text-zinc-800'}`;
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); submitQuickAdd(dayStr); }
+                else if (e.key === 'Escape') { e.preventDefault(); cancelQuickAdd(); }
+            };
+
+            const saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.title = 'Save session';
+            saveBtn.className = `shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-xs font-bold transition-all ${parentSelected ? 'bg-white text-zinc-900 hover:bg-zinc-200' : 'bg-zinc-950 text-white hover:bg-zinc-800'}`;
+            saveBtn.innerHTML = '<i data-lucide="check" class="w-3 h-3"></i>';
+            saveBtn.onclick = () => submitQuickAdd(dayStr);
+
+            const advBtn = document.createElement('button');
+            advBtn.type = 'button';
+            advBtn.title = 'Advanced — add HR zone blocks';
+            advBtn.className = `shrink-0 w-6 h-6 flex items-center justify-center rounded-md border text-[10px] transition-all ${parentSelected ? 'border-zinc-700 text-zinc-400 hover:text-zinc-100' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800'}`;
+            advBtn.innerHTML = '<i data-lucide="sliders" class="w-3 h-3"></i>';
+            advBtn.onclick = () => openAdvancedFromQuickAdd(dayStr);
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.title = 'Cancel';
+            cancelBtn.className = `shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-xs transition-all ${parentSelected ? 'text-zinc-500 hover:text-zinc-200' : 'text-zinc-400 hover:text-zinc-800'}`;
+            cancelBtn.innerHTML = '<i data-lucide="x" class="w-3 h-3"></i>';
+            cancelBtn.onclick = () => cancelQuickAdd();
+
+            wrap.appendChild(select);
+            wrap.appendChild(input);
+            wrap.appendChild(saveBtn);
+            wrap.appendChild(advBtn);
+            wrap.appendChild(cancelBtn);
+            return wrap;
+        }
+
+        function openQuickAdd(dayStr) {
+            quickAddDateStr = dayStr;
+            renderTimeline();
+            requestAnimationFrame(() => {
+                const input = document.getElementById('quick-add-input');
+                if (input) input.focus();
+            });
+        }
+
+        function cancelQuickAdd() {
+            quickAddDateStr = null;
+            renderTimeline();
+        }
+
+        async function submitQuickAdd(dayStr) {
+            const disciplineSel = document.getElementById('quick-add-discipline');
+            const textInput = document.getElementById('quick-add-input');
+            if (!disciplineSel || !textInput) return;
+
+            const text = textInput.value.trim();
+            if (!text) { textInput.focus(); return; }
+
+            const disciplineVal = disciplineSel.value;
+            const sportType = getParentSportForDiscipline(disciplineVal);
+
+            try {
+                const saved = await createTrainingSession({
+                    sport_type: sportType,
+                    discipline: disciplineVal,
+                    date: dayStr,
+                    time: '08:00',
+                    blocks: [],
+                    description: text
+                });
+                trainingSessions.push(saved);
+                quickAddDateStr = null;
+                renderAll();
+            } catch (err) {
+                console.error("Quick add failed:", err);
+                alert("Error: Could not add session. Please try again.");
+            }
+        }
+
+        // Hands whatever was typed inline off to the full modal, so anyone
+        // who wants warm-up/main/recovery blocks and HR targets on this
+        // particular session doesn't have to retype the sport or label.
+        function openAdvancedFromQuickAdd(dayStr) {
+            const disciplineSel = document.getElementById('quick-add-discipline');
+            const textInput = document.getElementById('quick-add-input');
+            const disciplineVal = disciplineSel ? disciplineSel.value : null;
+            const text = textInput ? textInput.value.trim() : '';
+
+            quickAddDateStr = null;
+            const d = parseLocalDateStr(dayStr);
+            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
+            triggerAddSessionModal();
+            if (disciplineVal) document.getElementById('modal-discipline-select').value = disciplineVal;
+            if (text) document.getElementById('modal-description-input').value = text;
+            updateModalSportZones();
+        }
+
         function adjustZoom(direction) {
             const newIndex = zoomIndex + direction;
             if (newIndex < 0 || newIndex >= ZOOM_LEVELS.length) return;
@@ -789,6 +931,7 @@
             today.setHours(0, 0, 0, 0);
             timelineAnchorDate = new Date(today);
             timelineAnchorDate.setDate(timelineAnchorDate.getDate() - 1);
+            RENDER_DAYS = RENDER_DAYS_DEFAULT;
             selectCalendarDate(today.getFullYear(), today.getMonth(), today.getDate());
         }
 
@@ -797,6 +940,16 @@
         // behavior, works identically on mobile touch). Ctrl/Cmd+scroll
         // is kept as an optional desktop shortcut for zoom, but the +/-
         // buttons are the primary (and only mobile-friendly) zoom control.
+        //
+        // The day list is also infinite in both directions: scrolling near
+        // the top edge prepends earlier days (so you can scroll into the
+        // past, not just forward), and scrolling near the bottom appends
+        // further future days. A guard flag prevents the programmatic
+        // scrollTop adjustment (needed to keep prepended content from
+        // visually jumping) from re-triggering itself.
+        let isAdjustingTimelineWindow = false;
+        const SCROLL_EDGE_THRESHOLD = 250; // px from an edge that triggers loading more days
+
         function initTimelineScrollHandlers() {
             const scrollArea = document.getElementById('timeline-scroll-area');
             if (!scrollArea) return;
@@ -807,6 +960,108 @@
                 }
                 // Otherwise let the browser handle normal vertical scrolling.
             }, { passive: false });
+
+            scrollArea.addEventListener('scroll', () => {
+                if (isAdjustingTimelineWindow || RENDER_DAYS >= INFINITE_SCROLL_MAX) return;
+                if (scrollArea.scrollTop < SCROLL_EDGE_THRESHOLD) {
+                    prependPastDays();
+                } else if (scrollArea.scrollHeight - scrollArea.scrollTop - scrollArea.clientHeight < SCROLL_EDGE_THRESHOLD) {
+                    appendFutureDays();
+                }
+            });
+        }
+
+        // Extends the rendered window backward in time. Re-anchoring shifts
+        // every existing row further down the DOM, which would otherwise
+        // yank the user's current view downward — so scrollTop is nudged by
+        // exactly however much the content grew, keeping the same days
+        // visually in place under the cursor.
+        function prependPastDays() {
+            isAdjustingTimelineWindow = true;
+            const scrollArea = document.getElementById('timeline-scroll-area');
+            const prevScrollHeight = scrollArea.scrollHeight;
+            const prevScrollTop = scrollArea.scrollTop;
+
+            timelineAnchorDate.setDate(timelineAnchorDate.getDate() - INFINITE_SCROLL_CHUNK);
+            RENDER_DAYS = Math.min(RENDER_DAYS + INFINITE_SCROLL_CHUNK, INFINITE_SCROLL_MAX);
+            renderTimeline();
+
+            requestAnimationFrame(() => {
+                const newScrollHeight = scrollArea.scrollHeight;
+                scrollArea.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+                isAdjustingTimelineWindow = false;
+            });
+        }
+
+        // Extends the rendered window forward in time. Nothing above the
+        // fold changes, so no scroll compensation is needed.
+        function appendFutureDays() {
+            isAdjustingTimelineWindow = true;
+            RENDER_DAYS = Math.min(RENDER_DAYS + INFINITE_SCROLL_CHUNK, INFINITE_SCROLL_MAX);
+            renderTimeline();
+            requestAnimationFrame(() => { isAdjustingTimelineWindow = false; });
+        }
+
+        // Monday-start week bounds (local dates) for the week containing `date`.
+        function getWeekBounds(date) {
+            const d = new Date(date);
+            d.setHours(0, 0, 0, 0);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(d);
+            monday.setDate(diff);
+            const sunday = new Date(monday);
+            sunday.setDate(sunday.getDate() + 6);
+            return { monday, sunday };
+        }
+
+        // Duplicates every session from the calendar week before the
+        // selected day's week into the current week, shifting each date
+        // forward by exactly 7 days. Sport, discipline, time, blocks and
+        // description are all copied as-is; only the date changes.
+        async function copyLastWeek() {
+            const { monday: thisMonday } = getWeekBounds(selectedDate);
+            const lastMonday = new Date(thisMonday);
+            lastMonday.setDate(lastMonday.getDate() - 7);
+            const lastSunday = new Date(lastMonday);
+            lastSunday.setDate(lastSunday.getDate() + 6);
+
+            const lastMondayStr = toLocalDateStr(lastMonday);
+            const lastSundayStr = toLocalDateStr(lastSunday);
+
+            // Date strings are YYYY-MM-DD, so lexicographic comparison
+            // matches chronological order — no need to parse for the range check.
+            const sourceSessions = trainingSessions.filter(s => s.date >= lastMondayStr && s.date <= lastSundayStr);
+
+            if (sourceSessions.length === 0) {
+                alert(`No sessions found in last week (${lastMondayStr} to ${lastSundayStr}) to copy.`);
+                return;
+            }
+
+            const thisWeekLabel = `${toLocalDateStr(thisMonday)} to ${toLocalDateStr(getWeekBounds(selectedDate).sunday)}`;
+            if (!confirm(`Copy ${sourceSessions.length} session(s) from last week into this week (${thisWeekLabel})? Running this twice will create duplicates.`)) {
+                return;
+            }
+
+            try {
+                for (const s of sourceSessions) {
+                    const shiftedDate = parseLocalDateStr(s.date);
+                    shiftedDate.setDate(shiftedDate.getDate() + 7);
+                    const saved = await createTrainingSession({
+                        sport_type: s.sport_type,
+                        discipline: s.discipline || '',
+                        date: toLocalDateStr(shiftedDate),
+                        time: s.time,
+                        blocks: s.blocks,
+                        description: s.description || ''
+                    });
+                    trainingSessions.push(saved);
+                }
+                renderAll();
+            } catch (err) {
+                console.error("Failed to copy last week:", err);
+                alert("Error: Could not copy all sessions from last week. Some may not have been duplicated — please check your plan.");
+            }
         }
 
         // --- TOTALS CALCULATOR ---
@@ -1485,6 +1740,11 @@
         window.navigateMonth = navigateMonth;
         window.adjustZoom = adjustZoom;
         window.jumpToToday = jumpToToday;
+        window.copyLastWeek = copyLastWeek;
+        window.openQuickAdd = openQuickAdd;
+        window.cancelQuickAdd = cancelQuickAdd;
+        window.submitQuickAdd = submitQuickAdd;
+        window.openAdvancedFromQuickAdd = openAdvancedFromQuickAdd;
         window.saveHRZonesFromSettings = saveHRZonesFromSettings;
         window.triggerAddSessionModal = triggerAddSessionModal;
         window.openEditSessionModal = openEditSessionModal;

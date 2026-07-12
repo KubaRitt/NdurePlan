@@ -108,7 +108,7 @@ export async function fetchSessionsByDateRange(startDateStr, endDateStr) {
 }
 
 // Insert new training session with workout blocks
-export async function createTrainingSession({ sport_type, date, time, blocks }) {
+export async function createTrainingSession({ sport_type, discipline = '', date, time, blocks, description = '' }) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("No active authenticated session.");
 
@@ -118,9 +118,11 @@ export async function createTrainingSession({ sport_type, date, time, blocks }) 
       {
         user_id: user.id,
         sport_type,
+        discipline,
         date,
         time,
-        blocks
+        blocks,
+        description
       }
     ])
     .select();
@@ -130,7 +132,7 @@ export async function createTrainingSession({ sport_type, date, time, blocks }) 
 }
 
 // Update existing training session blocks
-export async function updateTrainingSession(sessionId, { sport_type, date, time, blocks }) {
+export async function updateTrainingSession(sessionId, { sport_type, discipline = '', date, time, blocks, description = '' }) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("No active authenticated session.");
 
@@ -138,9 +140,11 @@ export async function updateTrainingSession(sessionId, { sport_type, date, time,
     .from('sessions')
     .update({
       sport_type,
+      discipline,
       date,
       time,
-      blocks
+      blocks,
+      description
     })
     .eq('id', sessionId)
     .eq('user_id', user.id)
