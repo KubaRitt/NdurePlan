@@ -130,8 +130,8 @@
 
                         <!-- Zoom & navigation controls -->
                         <div class="flex items-center gap-2">
-                            <button onclick="copyLastWeek()" class="px-2.5 py-1.5 text-[11px] font-mono font-semibold rounded-lg border border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400 transition-all flex items-center gap-1.5" title="Duplicate last week's sessions into this week">
-                                <i data-lucide="copy" class="w-3 h-3"></i> COPY LAST WEEK
+                            <button onclick="openCopyWeekModal()" class="px-2.5 py-1.5 text-[11px] font-mono font-semibold rounded-lg border border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400 transition-all flex items-center gap-1.5" title="Duplicate any week's sessions into this week">
+                                <i data-lucide="copy" class="w-3 h-3"></i> COPY WEEK&hellip;
                             </button>
                             <button onclick="jumpToToday()" class="px-2.5 py-1.5 text-[11px] font-mono font-semibold rounded-lg border border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400 transition-all">
                                 TODAY
@@ -272,6 +272,11 @@
                         </button>
                     </div>
 
+                    <!-- Live workout intensity preview — updates as blocks change -->
+                    <div id="modal-workout-preview" class="hidden bg-white border border-zinc-200 rounded-xl p-3">
+                        <!-- populated by refreshModalPreview() -->
+                    </div>
+
                     <!-- Nested Blocks List inside Modal Form -->
                     <div class="space-y-3" id="modal-blocks-container">
                         <!-- Instantiated blocks populated via JS -->
@@ -283,6 +288,30 @@
             <div class="p-4 border-t border-zinc-100 bg-zinc-50 flex items-center justify-end gap-3 rounded-b-2xl">
                 <button onclick="closeAddSessionModal()" class="px-4 py-2 hover:bg-zinc-200/70 border border-zinc-200 text-zinc-650 text-xs font-semibold rounded-lg">Cancel</button>
                 <button onclick="saveSessionFromModal()" id="modal-save-btn" class="px-5 py-2 bg-zinc-950 text-white hover:bg-zinc-800 text-xs font-semibold rounded-lg">Add Training Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- COPY WEEK MODAL -->
+    <div id="copy-week-modal" class="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white border border-zinc-200 shadow-2xl rounded-2xl max-w-sm w-full">
+            <div class="p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+                <div class="space-y-0.5">
+                    <h3 class="font-bold text-zinc-850">Copy a Week</h3>
+                    <p class="text-xs text-zinc-450">Duplicate any week's sessions into your currently selected week</p>
+                </div>
+                <button onclick="closeCopyWeekModal()" class="p-1 px-2 rounded-lg border hover:bg-zinc-100">&times;</button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block">Pick any day in the source week</label>
+                    <input type="date" id="copy-week-source-date" onchange="updateCopyWeekPreviewLabel()" class="w-full text-xs p-2.5 border border-zinc-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-900">
+                </div>
+                <p id="copy-week-preview-label" class="text-[11px] text-zinc-500 font-mono leading-relaxed"></p>
+            </div>
+            <div class="p-4 border-t border-zinc-100 bg-zinc-50 flex items-center justify-end gap-3 rounded-b-2xl">
+                <button onclick="closeCopyWeekModal()" class="px-4 py-2 hover:bg-zinc-200/70 border border-zinc-200 text-zinc-650 text-xs font-semibold rounded-lg">Cancel</button>
+                <button onclick="confirmCopyWeek()" class="px-5 py-2 bg-zinc-950 text-white hover:bg-zinc-800 text-xs font-semibold rounded-lg">Copy Into This Week</button>
             </div>
         </div>
     </div>
@@ -317,7 +346,6 @@
         let zoomIndex = 1; // index into ZOOM_LEVELS
         let selectedDate = new Date(); // reset to today on load
         let activeMonthYear = { month: new Date().getMonth(), year: new Date().getFullYear() };
-        let quickAddDateStr = null; // YYYY-MM-DD of the day row currently showing the inline quick-add form, or null
 
         // Discrete zoom steps for the vertical timeline. `rowHeight` sets
         // each day-row's min-height in px; `detail` controls how much
@@ -377,26 +405,128 @@
             return div.innerHTML;
         }
 
-        // Total minutes for a single block, accounting for repeats. For
-        // customized repeats, sums each rep's own time; otherwise multiplies
-        // the shared per-rep time by the repeat count.
-        function blockTotalMinutes(b) {
-            const base = parseInt(b.time_min) || 0;
-            if (!b.repeat || !b.repeat.reps || b.repeat.reps <= 1) return base;
-            if (b.repeat.customized && b.repeat.per_rep.length > 0) {
-                return b.repeat.per_rep.reduce((acc, r) => acc + (parseInt(r.time_min) || 0), 0);
+        const ZONE_COLOR = { easy: '#34d399', ap1: '#60a5fa', ap2: '#fbbf24', ap3: '#f87171' };
+        const ZONE_LABEL = { easy: 'Easy', ap1: 'AP1', ap2: 'AP2', ap3: 'AP3' };
+
+        // Expands a single block into an ordered list of concrete time
+        // segments — one per rep, plus one per rest, in the actual order
+        // they happen (honoring "begin with"/"end with" and per-rep
+        // customization). This is the single source of truth for total
+        // time/distance, zone-minute totals, and the workout graph, so none
+        // of them can ever drift out of sync with each other.
+        //
+        // A "standing" rest has no intensity (it's not training any zone —
+        // just time passing). A "moving" rest (e.g. easy jog between AP2
+        // reps) carries its own intensity/target HR and counts toward that
+        // zone's totals like any other segment.
+        function expandBlockToSegments(b) {
+            const baseTime = parseInt(b.time_min) || 0;
+            const baseDist = (b.distance_km !== null && b.distance_km !== undefined && b.distance_km !== '') ? parseFloat(b.distance_km) : null;
+
+            if (!b.repeat || !b.repeat.reps || b.repeat.reps <= 1) {
+                return [{ kind: 'work', intensity: b.intensity, target_hr: b.target_hr, time_min: baseTime, distance_km: baseDist }];
             }
-            return base * b.repeat.reps;
+
+            const restType = b.repeat.rest_type || 'standing';
+            const restSec = parseInt(b.repeat.rest_sec) || 0;
+            const restMin = restSec / 60;
+            const restIntensity = b.repeat.rest_intensity || 'easy';
+            const restTargetHr = b.repeat.rest_target_hr || null;
+            const startWith = b.repeat.start_with || 'interval';
+            const endWith = b.repeat.end_with || 'interval';
+
+            let workSegs;
+            if (b.repeat.customized && b.repeat.per_rep && b.repeat.per_rep.length > 0) {
+                workSegs = b.repeat.per_rep.map(r => ({
+                    kind: 'work', intensity: b.intensity, target_hr: r.target_hr,
+                    time_min: parseInt(r.time_min) || 0,
+                    distance_km: (r.distance_km !== null && r.distance_km !== undefined) ? parseFloat(r.distance_km) : null
+                }));
+            } else {
+                workSegs = Array.from({ length: b.repeat.reps }, () => ({ kind: 'work', intensity: b.intensity, target_hr: b.target_hr, time_min: baseTime, distance_km: baseDist }));
+            }
+
+            const makeRest = () => ({
+                kind: 'rest',
+                intensity: restType === 'moving' ? restIntensity : null,
+                target_hr: restType === 'moving' ? restTargetHr : null,
+                time_min: restMin,
+                distance_km: null,
+                moving: restType === 'moving'
+            });
+
+            const segments = [];
+            if (startWith === 'rest' && restSec > 0) segments.push(makeRest());
+            workSegs.forEach((seg, i) => {
+                segments.push(seg);
+                if (i < workSegs.length - 1 && restSec > 0) segments.push(makeRest());
+            });
+            if (endWith === 'rest' && restSec > 0) segments.push(makeRest());
+
+            return segments;
         }
 
-        // Total distance (km) for a single block, accounting for repeats.
+        function blockTotalMinutes(b) {
+            return expandBlockToSegments(b).reduce((acc, s) => acc + (s.time_min || 0), 0);
+        }
+
         function blockTotalDistance(b) {
-            const base = parseFloat(b.distance_km) || 0;
-            if (!b.repeat || !b.repeat.reps || b.repeat.reps <= 1) return base;
-            if (b.repeat.customized && b.repeat.per_rep.length > 0) {
-                return b.repeat.per_rep.reduce((acc, r) => acc + (parseFloat(r.distance_km) || 0), 0);
+            return expandBlockToSegments(b).reduce((acc, s) => acc + (parseFloat(s.distance_km) || 0), 0);
+        }
+
+        // Builds the small workout-intensity graph + stat/legend line shared
+        // by the modal's live preview and the right sidebar's session cards.
+        // `blocks` is a plain array of block objects (as stored/edited, not
+        // a full session) — bar width is proportional to segment duration,
+        // bar height to intensity, and standing rest renders as a low grey
+        // bar so the eye reads it as a real pause rather than more work.
+        function buildWorkoutPreviewMarkup(blocks) {
+            const allSegments = [];
+            (blocks || []).forEach(b => { if (b) allSegments.push(...expandBlockToSegments(b)); });
+            const totalMin = allSegments.reduce((acc, s) => acc + (s.time_min || 0), 0);
+
+            if (totalMin <= 0) {
+                return '<p class="text-[10px] text-zinc-400 font-light text-center py-2">Add a block with a time to see the workout shape.</p>';
             }
-            return base * b.repeat.reps;
+
+            const svgWidth = 400, svgHeight = 72, padding = 3;
+            const usableWidth = svgWidth - padding * 2;
+            const usableHeight = svgHeight - padding * 2;
+            const zoneHeightFrac = { easy: 0.32, ap1: 0.52, ap2: 0.74, ap3: 1.0 };
+
+            let x = padding;
+            let bars = '';
+            allSegments.forEach(seg => {
+                const rawWidth = (seg.time_min / totalMin) * usableWidth;
+                const segWidth = Math.max(rawWidth - 1, 0.6);
+                const isStandingRest = seg.kind === 'rest' && !seg.moving;
+                const heightFrac = isStandingRest ? 0.16 : (zoneHeightFrac[seg.intensity] || 0.32);
+                const barHeight = Math.max(heightFrac * usableHeight, 3);
+                const y = padding + (usableHeight - barHeight);
+                const fill = isStandingRest ? '#d4d4d8' : (ZONE_COLOR[seg.intensity] || '#a1a1aa');
+                const opacity = seg.kind === 'rest' ? '0.65' : '1';
+                bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${segWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="1.5" fill="${fill}" opacity="${opacity}"/>`;
+                x += rawWidth;
+            });
+
+            const totalDist = allSegments.reduce((acc, s) => acc + (parseFloat(s.distance_km) || 0), 0);
+            const zoneMinutes = { easy: 0, ap1: 0, ap2: 0, ap3: 0 };
+            allSegments.forEach(s => { if (s.intensity && zoneMinutes.hasOwnProperty(s.intensity)) zoneMinutes[s.intensity] += (s.time_min || 0); });
+            const legend = Object.keys(ZONE_LABEL)
+                .filter(z => zoneMinutes[z] > 0)
+                .map(z => `<span class="inline-flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${ZONE_COLOR[z]}"></span>${ZONE_LABEL[z]} ${Math.round(zoneMinutes[z])}m</span>`)
+                .join('<span class="text-zinc-300">&middot;</span>');
+
+            return `
+                <svg viewBox="0 0 ${svgWidth} ${svgHeight}" class="w-full h-auto block" xmlns="http://www.w3.org/2000/svg">
+                    <line x1="${padding}" y1="${svgHeight - padding}" x2="${svgWidth - padding}" y2="${svgHeight - padding}" stroke="#e4e4e7" stroke-width="1"/>
+                    ${bars}
+                </svg>
+                <div class="flex items-center justify-between text-[9px] font-mono text-zinc-500 pt-1.5 flex-wrap gap-x-2 gap-y-1">
+                    <div class="flex items-center gap-1.5 flex-wrap">${legend}</div>
+                    <div class="text-zinc-700 font-bold">${Math.round(totalMin)} min${totalDist > 0 ? ' &middot; ' + totalDist.toFixed(2) + ' km' : ''}</div>
+                </div>
+            `;
         }
 
         // Load real user data from Supabase
@@ -704,47 +834,39 @@
                 sessionsWrapper.className = "flex-grow flex items-center gap-1.5 flex-wrap py-1.5 overflow-hidden min-w-0";
 
                 if (daySessions.length === 0) {
-                    if (quickAddDateStr === dayStr) {
-                        sessionsWrapper.appendChild(buildQuickAddForm(dayStr, isSelected));
-                    } else {
-                        const addCard = document.createElement('button');
-                        addCard.type = 'button';
-                        addCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
-                        addCard.title = `Add session — ${dayName} ${dayNum}`;
-                        addCard.onclick = (e) => {
-                            e.stopPropagation();
-                            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
-                            openQuickAdd(dayStr);
-                        };
-                        addCard.textContent = "+";
-                        sessionsWrapper.appendChild(addCard);
-                    }
+                    const addCard = document.createElement('button');
+                    addCard.type = 'button';
+                    addCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
+                    addCard.title = `Add session — ${dayName} ${dayNum}`;
+                    addCard.onclick = (e) => {
+                        e.stopPropagation();
+                        selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
+                        triggerAddSessionModal();
+                    };
+                    addCard.textContent = "+";
+                    sessionsWrapper.appendChild(addCard);
                 } else {
                     daySessions.forEach(s => {
                         sessionsWrapper.appendChild(buildTimelineSessionCard(s, zoom.detail, isSelected));
                     });
 
-                    if (quickAddDateStr === dayStr) {
-                        sessionsWrapper.appendChild(buildQuickAddForm(dayStr, isSelected));
-                    } else {
-                        // Always-present control to add another session to a day
-                        // that already has one or more — without this, there was
-                        // no way to add a second session directly from a row.
-                        // Kept at a consistent, comfortably tappable size at
-                        // every zoom level rather than shrinking it down when
-                        // zoomed out, since that made it nearly invisible.
-                        const addMoreCard = document.createElement('button');
-                        addMoreCard.type = 'button';
-                        addMoreCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
-                        addMoreCard.title = `Add another session — ${dayName} ${dayNum}`;
-                        addMoreCard.onclick = (e) => {
-                            e.stopPropagation();
-                            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
-                            openQuickAdd(dayStr);
-                        };
-                        addMoreCard.textContent = "+";
-                        sessionsWrapper.appendChild(addMoreCard);
-                    }
+                    // Always-present control to add another session to a day
+                    // that already has one or more — without this, there was
+                    // no way to add a second session directly from a row.
+                    // Kept at a consistent, comfortably tappable size at
+                    // every zoom level rather than shrinking it down when
+                    // zoomed out, since that made it nearly invisible.
+                    const addMoreCard = document.createElement('button');
+                    addMoreCard.type = 'button';
+                    addMoreCard.className = `shrink-0 w-5 h-5 flex items-center justify-center rounded-md border font-bold text-xs transition-all ${isSelected ? 'border-zinc-700 text-zinc-500 hover:text-zinc-200 hover:border-zinc-500' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800 hover:border-zinc-400'}`;
+                    addMoreCard.title = `Add another session — ${dayName} ${dayNum}`;
+                    addMoreCard.onclick = (e) => {
+                        e.stopPropagation();
+                        selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
+                        triggerAddSessionModal();
+                    };
+                    addMoreCard.textContent = "+";
+                    sessionsWrapper.appendChild(addMoreCard);
                 }
 
                 row.appendChild(sessionsWrapper);
@@ -791,132 +913,6 @@
                 `;
             }
             return card;
-        }
-
-        // Builds the inline quick-add row: a discipline select plus a
-        // single text field, so adding a session is "pick sport, type a
-        // short label, hit enter" without opening the full modal. The
-        // "…" button hands off to the full modal (with blocks) for anyone
-        // who wants HR zone detail on this particular session.
-        function buildQuickAddForm(dayStr, parentSelected) {
-            const wrap = document.createElement('div');
-            wrap.className = "flex items-center gap-1.5 flex-wrap py-0.5 flex-grow min-w-0";
-            wrap.onclick = (e) => e.stopPropagation();
-
-            const select = document.createElement('select');
-            select.id = 'quick-add-discipline';
-            select.className = `text-[10px] font-mono px-1.5 py-1.5 rounded-md border focus:outline-none focus:ring-1 focus:ring-zinc-900 ${parentSelected ? 'bg-zinc-800 border-zinc-700 text-zinc-200' : 'bg-white border-zinc-200 text-zinc-700'}`;
-            PARENT_SPORTS.forEach(parent => {
-                const group = document.createElement('optgroup');
-                group.label = parent.replace(/\b\w/g, c => c.toUpperCase());
-                DISCIPLINES[parent].forEach(discipline => {
-                    const opt = document.createElement('option');
-                    opt.value = discipline;
-                    opt.textContent = discipline;
-                    group.appendChild(opt);
-                });
-                select.appendChild(group);
-            });
-
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.id = 'quick-add-input';
-            input.placeholder = 'e.g. Easy run 10k — Enter to save';
-            input.maxLength = 120;
-            input.className = `flex-grow min-w-[130px] text-[11px] px-2 py-1.5 rounded-md border focus:outline-none focus:ring-1 focus:ring-zinc-900 ${parentSelected ? 'bg-zinc-800 border-zinc-700 text-white placeholder-zinc-500' : 'bg-white border-zinc-200 text-zinc-800'}`;
-            input.onkeydown = (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); submitQuickAdd(dayStr); }
-                else if (e.key === 'Escape') { e.preventDefault(); cancelQuickAdd(); }
-            };
-
-            const saveBtn = document.createElement('button');
-            saveBtn.type = 'button';
-            saveBtn.title = 'Save session';
-            saveBtn.className = `shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-xs font-bold transition-all ${parentSelected ? 'bg-white text-zinc-900 hover:bg-zinc-200' : 'bg-zinc-950 text-white hover:bg-zinc-800'}`;
-            saveBtn.innerHTML = '<i data-lucide="check" class="w-3 h-3"></i>';
-            saveBtn.onclick = () => submitQuickAdd(dayStr);
-
-            const advBtn = document.createElement('button');
-            advBtn.type = 'button';
-            advBtn.title = 'Advanced — add HR zone blocks';
-            advBtn.className = `shrink-0 w-6 h-6 flex items-center justify-center rounded-md border text-[10px] transition-all ${parentSelected ? 'border-zinc-700 text-zinc-400 hover:text-zinc-100' : 'border-zinc-200 text-zinc-400 hover:text-zinc-800'}`;
-            advBtn.innerHTML = '<i data-lucide="sliders" class="w-3 h-3"></i>';
-            advBtn.onclick = () => openAdvancedFromQuickAdd(dayStr);
-
-            const cancelBtn = document.createElement('button');
-            cancelBtn.type = 'button';
-            cancelBtn.title = 'Cancel';
-            cancelBtn.className = `shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-xs transition-all ${parentSelected ? 'text-zinc-500 hover:text-zinc-200' : 'text-zinc-400 hover:text-zinc-800'}`;
-            cancelBtn.innerHTML = '<i data-lucide="x" class="w-3 h-3"></i>';
-            cancelBtn.onclick = () => cancelQuickAdd();
-
-            wrap.appendChild(select);
-            wrap.appendChild(input);
-            wrap.appendChild(saveBtn);
-            wrap.appendChild(advBtn);
-            wrap.appendChild(cancelBtn);
-            return wrap;
-        }
-
-        function openQuickAdd(dayStr) {
-            quickAddDateStr = dayStr;
-            renderTimeline();
-            requestAnimationFrame(() => {
-                const input = document.getElementById('quick-add-input');
-                if (input) input.focus();
-            });
-        }
-
-        function cancelQuickAdd() {
-            quickAddDateStr = null;
-            renderTimeline();
-        }
-
-        async function submitQuickAdd(dayStr) {
-            const disciplineSel = document.getElementById('quick-add-discipline');
-            const textInput = document.getElementById('quick-add-input');
-            if (!disciplineSel || !textInput) return;
-
-            const text = textInput.value.trim();
-            if (!text) { textInput.focus(); return; }
-
-            const disciplineVal = disciplineSel.value;
-            const sportType = getParentSportForDiscipline(disciplineVal);
-
-            try {
-                const saved = await createTrainingSession({
-                    sport_type: sportType,
-                    discipline: disciplineVal,
-                    date: dayStr,
-                    time: '08:00',
-                    blocks: [],
-                    description: text
-                });
-                trainingSessions.push(saved);
-                quickAddDateStr = null;
-                renderAll();
-            } catch (err) {
-                console.error("Quick add failed:", err);
-                alert("Error: Could not add session. Please try again.");
-            }
-        }
-
-        // Hands whatever was typed inline off to the full modal, so anyone
-        // who wants warm-up/main/recovery blocks and HR targets on this
-        // particular session doesn't have to retype the sport or label.
-        function openAdvancedFromQuickAdd(dayStr) {
-            const disciplineSel = document.getElementById('quick-add-discipline');
-            const textInput = document.getElementById('quick-add-input');
-            const disciplineVal = disciplineSel ? disciplineSel.value : null;
-            const text = textInput ? textInput.value.trim() : '';
-
-            quickAddDateStr = null;
-            const d = parseLocalDateStr(dayStr);
-            selectCalendarDate(d.getFullYear(), d.getMonth(), d.getDate());
-            triggerAddSessionModal();
-            if (disciplineVal) document.getElementById('modal-discipline-select').value = disciplineVal;
-            if (text) document.getElementById('modal-description-input').value = text;
-            updateModalSportZones();
         }
 
         function adjustZoom(direction) {
@@ -1015,38 +1011,74 @@
             return { monday, sunday };
         }
 
-        // Duplicates every session from the calendar week before the
-        // selected day's week into the current week, shifting each date
-        // forward by exactly 7 days. Sport, discipline, time, blocks and
-        // description are all copied as-is; only the date changes.
-        async function copyLastWeek() {
+        // Opens the Copy Week modal, defaulting the source date to the week
+        // immediately before the currently selected week (the most common
+        // case), while still letting the person pick any other week.
+        function openCopyWeekModal() {
             const { monday: thisMonday } = getWeekBounds(selectedDate);
-            const lastMonday = new Date(thisMonday);
-            lastMonday.setDate(lastMonday.getDate() - 7);
-            const lastSunday = new Date(lastMonday);
-            lastSunday.setDate(lastSunday.getDate() + 6);
+            const defaultSource = new Date(thisMonday);
+            defaultSource.setDate(defaultSource.getDate() - 7);
+            document.getElementById('copy-week-source-date').value = toLocalDateStr(defaultSource);
+            updateCopyWeekPreviewLabel();
+            document.getElementById('copy-week-modal').classList.remove('hidden');
+        }
 
-            const lastMondayStr = toLocalDateStr(lastMonday);
-            const lastSundayStr = toLocalDateStr(lastSunday);
+        function closeCopyWeekModal() {
+            document.getElementById('copy-week-modal').classList.add('hidden');
+        }
 
-            // Date strings are YYYY-MM-DD, so lexicographic comparison
-            // matches chronological order — no need to parse for the range check.
-            const sourceSessions = trainingSessions.filter(s => s.date >= lastMondayStr && s.date <= lastSundayStr);
+        // Shows exactly what will happen before the person commits: how many
+        // sessions were found in the picked week, and which week they'll land in.
+        function updateCopyWeekPreviewLabel() {
+            const input = document.getElementById('copy-week-source-date');
+            const label = document.getElementById('copy-week-preview-label');
+            if (!input.value) { label.textContent = ''; return; }
 
-            if (sourceSessions.length === 0) {
-                alert(`No sessions found in last week (${lastMondayStr} to ${lastSundayStr}) to copy.`);
+            const picked = parseLocalDateStr(input.value);
+            const { monday: sourceMonday, sunday: sourceSunday } = getWeekBounds(picked);
+            const { monday: destMonday, sunday: destSunday } = getWeekBounds(selectedDate);
+            const count = trainingSessions.filter(s => s.date >= toLocalDateStr(sourceMonday) && s.date <= toLocalDateStr(sourceSunday)).length;
+
+            if (sourceMonday.getTime() === destMonday.getTime()) {
+                label.textContent = "That's the currently selected week — pick a different week to copy from.";
+                return;
+            }
+            label.textContent = `${count} session(s) from ${toLocalDateStr(sourceMonday)} \u2192 ${toLocalDateStr(sourceSunday)} will be copied into ${toLocalDateStr(destMonday)} \u2192 ${toLocalDateStr(destSunday)}.`;
+        }
+
+        // Duplicates every session from the picked source week into the
+        // currently selected week, shifting each date by the exact number
+        // of days between the two Mondays. Sport, discipline, time, blocks
+        // and description are all copied as-is; only the date changes.
+        async function confirmCopyWeek() {
+            const input = document.getElementById('copy-week-source-date');
+            if (!input.value) return;
+
+            const picked = parseLocalDateStr(input.value);
+            const { monday: sourceMonday, sunday: sourceSunday } = getWeekBounds(picked);
+            const { monday: destMonday } = getWeekBounds(selectedDate);
+            const dayShift = Math.round((destMonday - sourceMonday) / (1000 * 60 * 60 * 24));
+
+            if (dayShift === 0) {
+                alert("Source and destination weeks are the same — pick a different week to copy from.");
                 return;
             }
 
-            const thisWeekLabel = `${toLocalDateStr(thisMonday)} to ${toLocalDateStr(getWeekBounds(selectedDate).sunday)}`;
-            if (!confirm(`Copy ${sourceSessions.length} session(s) from last week into this week (${thisWeekLabel})? Running this twice will create duplicates.`)) {
+            const sourceMondayStr = toLocalDateStr(sourceMonday);
+            const sourceSundayStr = toLocalDateStr(sourceSunday);
+            // Date strings are YYYY-MM-DD, so lexicographic comparison
+            // matches chronological order — no need to parse for the range check.
+            const sourceSessions = trainingSessions.filter(s => s.date >= sourceMondayStr && s.date <= sourceSundayStr);
+
+            if (sourceSessions.length === 0) {
+                alert(`No sessions found in the week of ${sourceMondayStr} to copy.`);
                 return;
             }
 
             try {
                 for (const s of sourceSessions) {
                     const shiftedDate = parseLocalDateStr(s.date);
-                    shiftedDate.setDate(shiftedDate.getDate() + 7);
+                    shiftedDate.setDate(shiftedDate.getDate() + dayShift);
                     const saved = await createTrainingSession({
                         sport_type: s.sport_type,
                         discipline: s.discipline || '',
@@ -1057,10 +1089,11 @@
                     });
                     trainingSessions.push(saved);
                 }
+                closeCopyWeekModal();
                 renderAll();
             } catch (err) {
-                console.error("Failed to copy last week:", err);
-                alert("Error: Could not copy all sessions from last week. Some may not have been duplicated — please check your plan.");
+                console.error("Failed to copy week:", err);
+                alert("Error: Could not copy all sessions. Some may not have been duplicated — please check your plan.");
             }
         }
 
@@ -1093,14 +1126,17 @@
             document.getElementById('totals-header-label').textContent = `This Week's Totals`;
 
             // Sum planned minutes per HR zone across every sport combined —
-            // a block's repeat count is already folded into blockTotalMinutes.
+            // segment expansion already accounts for repeats, moving vs.
+            // standing rest, and begin/end-with-rest sequencing, so this
+            // stays in exact sync with what the workout graph shows.
             listToCalc.forEach(s => {
                 s.blocks.forEach(b => {
-                    const blockMin = blockTotalMinutes(b);
-                    totalMin += blockMin;
-                    if (zoneMinutes.hasOwnProperty(b.intensity)) {
-                        zoneMinutes[b.intensity] += blockMin;
-                    }
+                    expandBlockToSegments(b).forEach(seg => {
+                        totalMin += (seg.time_min || 0);
+                        if (seg.intensity && zoneMinutes.hasOwnProperty(seg.intensity)) {
+                            zoneMinutes[seg.intensity] += (seg.time_min || 0);
+                        }
+                    });
                 });
             });
 
@@ -1200,33 +1236,45 @@
                 const blockBox = document.createElement('div');
                 blockBox.className = "p-4 border border-zinc-200 bg-zinc-50/50 rounded-xl space-y-3 relative group";
 
-                // Edit + Delete Session Buttons inside card
+                // Header: title/subtitle + edit/delete buttons
                 const displayLabel = (s.discipline && s.discipline.length > 0) ? s.discipline : s.sport_type;
                 const hasDescription = !!s.description;
                 const cardTitle = hasDescription ? s.description : displayLabel;
                 const cardSubtitle = hasDescription ? displayLabel : '';
-                blockBox.innerHTML = `
-                    <div class="flex items-start justify-between border-b border-zinc-100 pb-2 gap-2">
-                        <div class="space-y-0.5 min-w-0">
-                            <p class="text-xs font-bold text-zinc-900 leading-snug">${escapeHtml(cardTitle)}</p>
-                            <div class="flex items-center gap-1.5">
-                                ${cardSubtitle ? `<span class="text-[10px] font-mono uppercase tracking-tight text-zinc-400">${escapeHtml(cardSubtitle)}</span><span class="text-zinc-300">&middot;</span>` : ''}
-                                <span class="text-[10px] font-mono font-medium text-zinc-400">${s.time}</span>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-1 shrink-0">
-                            <button onclick="openEditSessionModal('${s.id}')" class="text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 p-1 rounded transition-colors" title="Edit Session">
-                                <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
-                            </button>
-                            <button onclick="deleteSession('${s.id}')" class="text-zinc-400 hover:text-red-500 hover:bg-zinc-100 p-1 rounded transition-colors" title="Delete Session">
-                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                            </button>
+
+                const header = document.createElement('div');
+                header.className = "flex items-start justify-between border-b border-zinc-100 pb-2 gap-2";
+                header.innerHTML = `
+                    <div class="space-y-0.5 min-w-0">
+                        <p class="text-xs font-bold text-zinc-900 leading-snug">${escapeHtml(cardTitle)}</p>
+                        <div class="flex items-center gap-1.5">
+                            ${cardSubtitle ? `<span class="text-[10px] font-mono uppercase tracking-tight text-zinc-400">${escapeHtml(cardSubtitle)}</span><span class="text-zinc-300">&middot;</span>` : ''}
+                            <span class="text-[10px] font-mono font-medium text-zinc-400">${s.time}</span>
                         </div>
                     </div>
-                    <div class="space-y-2">
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button onclick="openEditSessionModal('${s.id}')" class="text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 p-1 rounded transition-colors" title="Edit Session">
+                            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="deleteSession('${s.id}')" class="text-zinc-400 hover:text-red-500 hover:bg-zinc-100 p-1 rounded transition-colors" title="Delete Session">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
                 `;
+                blockBox.appendChild(header);
 
-                // Calculate Pace logic and append blocks
+                // Whole-session workout intensity graph — the shape of the
+                // entire session (all blocks, in order) at a glance.
+                if (s.blocks && s.blocks.length > 0) {
+                    const previewWrap = document.createElement('div');
+                    previewWrap.className = "bg-white p-2.5 rounded-lg border border-zinc-100";
+                    previewWrap.innerHTML = buildWorkoutPreviewMarkup(s.blocks);
+                    blockBox.appendChild(previewWrap);
+                }
+
+                const blocksList = document.createElement('div');
+                blocksList.className = "space-y-2";
+
                 s.blocks.forEach(b => {
                     const blockDiv = document.createElement('div');
                     blockDiv.className = "bg-white p-2.5 rounded-lg border border-zinc-100 text-xs space-y-1.5 shadow-sm";
@@ -1260,13 +1308,23 @@
                     const repeatBadge = isRepeat
                         ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-zinc-900 text-white">${b.repeat.reps}&times;</span>`
                         : '';
-                    const totalTime = isRepeat ? (b.repeat.customized
-                        ? b.repeat.per_rep.reduce((acc, r) => acc + (parseInt(r.time_min) || 0), 0)
-                        : b.time_min * b.repeat.reps) : b.time_min;
-                    const totalDist = isRepeat ? (b.repeat.customized
-                        ? b.repeat.per_rep.reduce((acc, r) => acc + (parseFloat(r.distance_km) || 0), 0)
-                        : (b.distance_km || 0) * b.repeat.reps) : b.distance_km;
-                    const restNote = isRepeat ? `<div class="text-zinc-400">Rest: <span class="font-bold text-zinc-600">${b.repeat.rest_sec}s</span> between reps</div>` : '';
+                    const totalTime = blockTotalMinutes(b);
+                    const totalDist = blockTotalDistance(b);
+
+                    let restNote = '';
+                    if (isRepeat && b.repeat.rest_sec > 0) {
+                        const restKind = b.repeat.rest_type === 'moving'
+                            ? `moving (${(b.repeat.rest_intensity || 'easy').toUpperCase()}${b.repeat.rest_target_hr ? ', ' + b.repeat.rest_target_hr + ' bpm' : ''})`
+                            : 'standing';
+                        restNote = `<div class="col-span-2 text-zinc-400">Rest: <span class="font-bold text-zinc-600">${b.repeat.rest_sec}s</span> ${restKind}</div>`;
+                    }
+                    let sequenceNote = '';
+                    if (isRepeat && (b.repeat.start_with === 'rest' || b.repeat.end_with === 'rest')) {
+                        const parts = [];
+                        if (b.repeat.start_with === 'rest') parts.push('begins with rest');
+                        if (b.repeat.end_with === 'rest') parts.push('ends with rest');
+                        sequenceNote = `<div class="col-span-2 text-zinc-400">Sequence: <span class="font-bold text-zinc-600">${parts.join(', ')}</span></div>`;
+                    }
 
                     blockDiv.innerHTML = `
                         <div class="flex items-center justify-between">
@@ -1282,12 +1340,14 @@
                             <div>Total time: <span class="font-bold text-zinc-700">${totalTime} mins</span></div>
                             ${totalDist ? `<div>Total distance: <span class="font-bold text-zinc-700">${totalDist.toFixed ? totalDist.toFixed(2) : totalDist} km</span></div>` : ''}
                             ${restNote}
+                            ${sequenceNote}
                             ${paceFormatted ? `<div class="text-zinc-650 font-bold col-span-2 text-right text-indigo-600">${paceFormatted}</div>` : ''}
                         </div>
                     `;
-                    blockBox.appendChild(blockDiv);
+                    blocksList.appendChild(blockDiv);
                 });
 
+                blockBox.appendChild(blocksList);
                 daySessionsList.appendChild(blockBox);
             });
 
@@ -1375,8 +1435,8 @@
                 // comes back undefined and the whole repeat section renders
                 // collapsed/unchecked even when reps/per_rep data exists.
                 const loadedRepeat = b.repeat
-                    ? { ...b.repeat, enabled: (b.repeat.reps || 1) > 1 }
-                    : { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [] };
+                    ? { rest_type: 'standing', rest_intensity: 'easy', rest_target_hr: null, start_with: 'interval', end_with: 'interval', ...b.repeat, enabled: (b.repeat.reps || 1) > 1 }
+                    : { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [], rest_type: 'standing', rest_intensity: 'easy', rest_target_hr: null, start_with: 'interval', end_with: 'interval' };
 
                 addBlockToModalForm({
                     type: b.type,
@@ -1391,6 +1451,7 @@
             if (currentModalBlocks.length === 0) addBlockToModalForm();
 
             modal.classList.remove('hidden');
+            refreshModalPreview();
         }
 
         function closeAddSessionModal() {
@@ -1425,25 +1486,27 @@
                     document.getElementById(`block-hr-${idx}`).value = hrZones[sport][selectInt.value] || 120;
                 }
             });
+            refreshModalPreview();
         }
 
         function addBlockToModalForm(prefill = null) {
             const idx = currentModalBlocks.length;
+            const defaultRepeat = { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [], rest_type: 'standing', rest_intensity: 'easy', rest_target_hr: null, start_with: 'interval', end_with: 'interval' };
             const blockObj = prefill || {
                 type: idx === 0 ? 'Warm Up' : `Interval Set ${idx}`,
                 intensity: 'easy',
                 target_hr: hrZones[getParentSportForDiscipline(document.getElementById('modal-discipline-select').value)]['easy'],
                 time_min: 15,
                 distance_km: '',
-                repeat: { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [] }
+                repeat: { ...defaultRepeat }
             };
-            if (!blockObj.repeat) blockObj.repeat = { enabled: false, reps: 4, rest_sec: 60, customized: false, per_rep: [] };
+            if (!blockObj.repeat) blockObj.repeat = { ...defaultRepeat };
             currentModalBlocks.push(blockObj);
 
             const container = document.getElementById('modal-blocks-container');
             const row = document.createElement('div');
             row.id = `modal-block-row-${idx}`;
-            row.className = "bg-zinc-50 border border-zinc-200 p-4 rounded-xl space-y-3 relative";
+            row.className = "bg-zinc-50 border border-zinc-200 border-l-4 p-4 rounded-xl space-y-3 relative";
             container.appendChild(row);
 
             renderBlockRow(idx);
@@ -1458,12 +1521,16 @@
 
             const repeatChecked = blockObj.repeat.enabled ? 'checked' : '';
             const isRepeating = blockObj.repeat.enabled;
+            const restType = blockObj.repeat.rest_type || 'standing';
+            const isMovingRest = restType === 'moving';
+
+            row.style.borderLeftColor = ZONE_COLOR[blockObj.intensity] || '#a1a1aa';
 
             row.innerHTML = `
                 <div class="flex items-start justify-between gap-3">
                     <div class="flex-grow space-y-1">
                         <label class="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Block Name</label>
-                        <input type="text" id="block-type-${idx}" value="${escapeHtml(blockObj.type)}" class="w-full text-sm font-semibold p-2 border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900">
+                        <input type="text" id="block-type-${idx}" value="${escapeHtml(blockObj.type)}" oninput="refreshModalPreview()" class="w-full text-sm font-semibold p-2 border border-zinc-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900">
                     </div>
                     <button type="button" onclick="removeBlockFromModalForm(${idx})" class="mt-5 text-zinc-400 hover:text-red-500 p-1 rounded transition-colors" title="Remove block">
                         <i data-lucide="x" class="w-4 h-4"></i>
@@ -1482,15 +1549,15 @@
                     </div>
                     <div>
                         <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Target HR</label>
-                        <input type="number" id="block-hr-${idx}" value="${blockObj.target_hr}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                        <input type="number" id="block-hr-${idx}" value="${blockObj.target_hr}" oninput="refreshModalPreview()" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
                     </div>
                     <div>
                         <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">${isRepeating ? 'Time/rep (min)' : 'Time (min)'}</label>
-                        <input type="number" id="block-time-${idx}" value="${blockObj.time_min}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                        <input type="number" id="block-time-${idx}" value="${blockObj.time_min}" oninput="refreshModalPreview()" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
                     </div>
                     <div>
                         <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">${isRepeating ? 'Dist/rep (km)' : 'Distance (km)'}</label>
-                        <input type="number" step="0.01" id="block-distance-${idx}" value="${blockObj.distance_km}" placeholder="Optional" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                        <input type="number" step="0.01" id="block-distance-${idx}" value="${blockObj.distance_km}" placeholder="Optional" oninput="refreshModalPreview()" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
                     </div>
                 </div>
 
@@ -1508,8 +1575,50 @@
                                 <input type="number" min="1" id="block-reps-${idx}" value="${blockObj.repeat.reps}" onchange="onRepeatCountChange(${idx})" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
                             </div>
                             <div>
-                                <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Rest between (sec)</label>
-                                <input type="number" min="0" id="block-rest-${idx}" value="${blockObj.repeat.rest_sec}" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                                <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Rest duration (sec)</label>
+                                <input type="number" min="0" id="block-rest-${idx}" value="${blockObj.repeat.rest_sec}" oninput="refreshModalPreview()" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                            </div>
+                        </div>
+
+                        <div class="max-w-xs">
+                            <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Rest type</label>
+                            <select id="block-rest-type-${idx}" onchange="onRestTypeChange(${idx})" class="w-full text-xs p-2 border border-zinc-200 bg-white rounded-lg focus:outline-none">
+                                <option value="standing" ${!isMovingRest ? 'selected' : ''}>Standing (full stop)</option>
+                                <option value="moving" ${isMovingRest ? 'selected' : ''}>Moving (jog/spin easy)</option>
+                            </select>
+                            <p class="text-[9px] text-zinc-400 font-light mt-1 leading-relaxed">Moving rest counts toward your zone totals at its own intensity — e.g. AP2 work, Easy jog rest, instead of standing still.</p>
+                        </div>
+
+                        <div id="block-rest-moving-fields-${idx}" class="${isMovingRest ? '' : 'hidden'} grid grid-cols-2 gap-2 max-w-xs">
+                            <div>
+                                <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Rest intensity</label>
+                                <select id="block-rest-intensity-${idx}" onchange="onRestIntensityChange(${idx})" class="w-full text-xs p-2 border border-zinc-200 bg-white rounded-lg focus:outline-none">
+                                    <option value="easy" ${(blockObj.repeat.rest_intensity || 'easy') === 'easy' ? 'selected' : ''}>Easy</option>
+                                    <option value="ap1" ${blockObj.repeat.rest_intensity === 'ap1' ? 'selected' : ''}>AP1</option>
+                                    <option value="ap2" ${blockObj.repeat.rest_intensity === 'ap2' ? 'selected' : ''}>AP2</option>
+                                    <option value="ap3" ${blockObj.repeat.rest_intensity === 'ap3' ? 'selected' : ''}>AP3</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Rest target HR</label>
+                                <input type="number" id="block-rest-hr-${idx}" value="${blockObj.repeat.rest_target_hr || ''}" oninput="refreshModalPreview()" class="w-full p-2 border border-zinc-200 rounded-lg font-mono text-xs">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2 max-w-xs">
+                            <div>
+                                <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Begin with</label>
+                                <select id="block-start-with-${idx}" onchange="refreshModalPreview()" class="w-full text-xs p-2 border border-zinc-200 bg-white rounded-lg focus:outline-none">
+                                    <option value="interval" ${(blockObj.repeat.start_with || 'interval') === 'interval' ? 'selected' : ''}>An interval</option>
+                                    <option value="rest" ${blockObj.repeat.start_with === 'rest' ? 'selected' : ''}>A rest</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[9px] font-bold text-zinc-400 uppercase block mb-1">End with</label>
+                                <select id="block-end-with-${idx}" onchange="refreshModalPreview()" class="w-full text-xs p-2 border border-zinc-200 bg-white rounded-lg focus:outline-none">
+                                    <option value="interval" ${(blockObj.repeat.end_with || 'interval') === 'interval' ? 'selected' : ''}>An interval</option>
+                                    <option value="rest" ${blockObj.repeat.end_with === 'rest' ? 'selected' : ''}>A rest</option>
+                                </select>
                             </div>
                         </div>
 
@@ -1525,6 +1634,7 @@
 
             if (blockObj.repeat.customized) renderPerRepList(idx);
             lucide.createIcons();
+            refreshModalPreview();
         }
 
         function toggleBlockRepeat(idx) {
@@ -1535,6 +1645,37 @@
             renderBlockRow(idx);
         }
 
+        // Toggling standing/moving rest only needs to show or hide the
+        // moving-rest fields — not a full row re-render — so nothing the
+        // person already typed elsewhere in the row gets lost.
+        function onRestTypeChange(idx) {
+            const blockObj = currentModalBlocks[idx];
+            const val = document.getElementById(`block-rest-type-${idx}`).value;
+            blockObj.repeat.rest_type = val;
+            const movingFields = document.getElementById(`block-rest-moving-fields-${idx}`);
+            if (movingFields) movingFields.classList.toggle('hidden', val !== 'moving');
+
+            if (val === 'moving') {
+                const hrInput = document.getElementById(`block-rest-hr-${idx}`);
+                const intensitySel = document.getElementById(`block-rest-intensity-${idx}`);
+                if (hrInput && intensitySel && !hrInput.value) {
+                    const discipline = document.getElementById('modal-discipline-select').value;
+                    const sport = getParentSportForDiscipline(discipline);
+                    hrInput.value = hrZones[sport][intensitySel.value] || 120;
+                }
+            }
+            refreshModalPreview();
+        }
+
+        function onRestIntensityChange(idx) {
+            const discipline = document.getElementById('modal-discipline-select').value;
+            const sport = getParentSportForDiscipline(discipline);
+            const chosenZone = document.getElementById(`block-rest-intensity-${idx}`).value;
+            const hrInput = document.getElementById(`block-rest-hr-${idx}`);
+            if (hrInput) hrInput.value = hrZones[sport][chosenZone] || 120;
+            refreshModalPreview();
+        }
+
         function onRepeatCountChange(idx) {
             const blockObj = currentModalBlocks[idx];
             const newReps = Math.max(1, parseInt(document.getElementById(`block-reps-${idx}`).value) || 1);
@@ -1543,6 +1684,7 @@
                 adjustPerRepArrayLength(idx);
                 renderPerRepList(idx);
             }
+            refreshModalPreview();
         }
 
         function toggleRepeatCustomize(idx) {
@@ -1556,6 +1698,7 @@
             } else {
                 listEl.classList.add('hidden');
             }
+            refreshModalPreview();
         }
 
         // Ensures per_rep has exactly `reps` entries, seeding new ones from
@@ -1599,6 +1742,7 @@
             } else {
                 rep[field] = parseInt(value) || 0;
             }
+            refreshModalPreview();
         }
 
         // Reads current input values for a row back into currentModalBlocks,
@@ -1624,8 +1768,12 @@
                 row.remove();
                 currentModalBlocks[idx] = null; // Mark deactivated
             }
+            refreshModalPreview();
         }
 
+        // Live-updates the block's left border color to match its zone as
+        // soon as it's changed, so the whole builder stays a quick visual
+        // scan of what intensity mix a session actually contains.
         function changeModalBlockIntensityCode(idx) {
             const discipline = document.getElementById('modal-discipline-select').value;
             const sport = getParentSportForDiscipline(discipline);
@@ -1634,6 +1782,64 @@
 
             // Set dynamic HR defaults
             targetHRInput.value = hrZones[sport][chosenZone] || 120;
+
+            const row = document.getElementById(`modal-block-row-${idx}`);
+            if (row) row.style.borderLeftColor = ZONE_COLOR[chosenZone] || '#a1a1aa';
+
+            refreshModalPreview();
+        }
+
+        // Reads every current block row straight from the DOM into plain
+        // block objects — the single gathering routine used both for the
+        // live preview (so it never drifts from what saving will produce)
+        // and for the actual save.
+        function collectBlocksFromModalDOM() {
+            const result = [];
+            currentModalBlocks.forEach((block, idx) => {
+                if (block === null) return;
+                const typeEl = document.getElementById(`block-type-${idx}`);
+                if (!typeEl) return;
+
+                const type = typeEl.value || 'Block Set';
+                const intensity = document.getElementById(`block-intensity-${idx}`).value;
+                const target_hr = parseInt(document.getElementById(`block-hr-${idx}`).value) || 120;
+                const time_min = parseInt(document.getElementById(`block-time-${idx}`).value) || 0;
+
+                const rawDist = document.getElementById(`block-distance-${idx}`).value;
+                const distance_km = rawDist !== "" ? parseFloat(rawDist) : null;
+
+                const repeatToggle = document.getElementById(`block-repeat-toggle-${idx}`);
+                const repeatEnabled = repeatToggle ? repeatToggle.checked : false;
+                let repeat = null;
+                if (repeatEnabled) {
+                    const reps = Math.max(1, parseInt(document.getElementById(`block-reps-${idx}`)?.value) || 1);
+                    const rest_sec = parseInt(document.getElementById(`block-rest-${idx}`)?.value) || 0;
+                    const rest_type = document.getElementById(`block-rest-type-${idx}`)?.value || 'standing';
+                    const rest_intensity = document.getElementById(`block-rest-intensity-${idx}`)?.value || 'easy';
+                    const rest_target_hr = parseInt(document.getElementById(`block-rest-hr-${idx}`)?.value) || null;
+                    const start_with = document.getElementById(`block-start-with-${idx}`)?.value || 'interval';
+                    const end_with = document.getElementById(`block-end-with-${idx}`)?.value || 'interval';
+                    const customized = block.repeat.customized;
+                    repeat = {
+                        reps, rest_sec, rest_type, rest_intensity, rest_target_hr, start_with, end_with,
+                        customized,
+                        per_rep: customized ? block.repeat.per_rep.slice(0, reps) : []
+                    };
+                }
+
+                result.push({ type, intensity, target_hr, time_min, distance_km, repeat });
+            });
+            return result;
+        }
+
+        // Re-renders the live workout-shape preview from whatever is
+        // currently in the modal's form fields.
+        function refreshModalPreview() {
+            const previewEl = document.getElementById('modal-workout-preview');
+            if (!previewEl) return;
+            const blocks = collectBlocksFromModalDOM();
+            previewEl.classList.toggle('hidden', blocks.length === 0);
+            if (blocks.length > 0) previewEl.innerHTML = buildWorkoutPreviewMarkup(blocks);
         }
 
         async function saveSessionFromModal() {
@@ -1648,42 +1854,9 @@
                 return;
             }
 
-            // Gather active blocks
-            const finalizedBlocks = [];
-            currentModalBlocks.forEach((block, idx) => {
-                if (block === null) return; // Clean skipped rows
-
-                const type = document.getElementById(`block-type-${idx}`).value || 'Block Set';
-                const intensity = document.getElementById(`block-intensity-${idx}`).value;
-                const target_hr = parseInt(document.getElementById(`block-hr-${idx}`).value) || 120;
-                const time_min = parseInt(document.getElementById(`block-time-${idx}`).value) || 0;
-
-                const rawDist = document.getElementById(`block-distance-${idx}`).value;
-                const distance_km = rawDist !== "" ? parseFloat(rawDist) : null;
-
-                const repeatEnabled = document.getElementById(`block-repeat-toggle-${idx}`).checked;
-                let repeat = null;
-                if (repeatEnabled) {
-                    const reps = Math.max(1, parseInt(document.getElementById(`block-reps-${idx}`).value) || 1);
-                    const rest_sec = parseInt(document.getElementById(`block-rest-${idx}`).value) || 0;
-                    const customized = block.repeat.customized;
-                    repeat = {
-                        reps,
-                        rest_sec,
-                        customized,
-                        per_rep: customized ? block.repeat.per_rep.slice(0, reps) : []
-                    };
-                }
-
-                finalizedBlocks.push({
-                    type,
-                    intensity,
-                    target_hr,
-                    time_min,
-                    distance_km,
-                    repeat
-                });
-            });
+            // Gather active blocks — same routine that drives the live preview,
+            // so there's no chance of the two disagreeing.
+            const finalizedBlocks = collectBlocksFromModalDOM();
 
             if (finalizedBlocks.length === 0) {
                 alert("Please define at least one workout block.");
@@ -1740,11 +1913,10 @@
         window.navigateMonth = navigateMonth;
         window.adjustZoom = adjustZoom;
         window.jumpToToday = jumpToToday;
-        window.copyLastWeek = copyLastWeek;
-        window.openQuickAdd = openQuickAdd;
-        window.cancelQuickAdd = cancelQuickAdd;
-        window.submitQuickAdd = submitQuickAdd;
-        window.openAdvancedFromQuickAdd = openAdvancedFromQuickAdd;
+        window.openCopyWeekModal = openCopyWeekModal;
+        window.closeCopyWeekModal = closeCopyWeekModal;
+        window.updateCopyWeekPreviewLabel = updateCopyWeekPreviewLabel;
+        window.confirmCopyWeek = confirmCopyWeek;
         window.saveHRZonesFromSettings = saveHRZonesFromSettings;
         window.triggerAddSessionModal = triggerAddSessionModal;
         window.openEditSessionModal = openEditSessionModal;
@@ -1756,6 +1928,9 @@
         window.toggleBlockRepeat = toggleBlockRepeat;
         window.onRepeatCountChange = onRepeatCountChange;
         window.toggleRepeatCustomize = toggleRepeatCustomize;
+        window.onRestTypeChange = onRestTypeChange;
+        window.onRestIntensityChange = onRestIntensityChange;
+        window.refreshModalPreview = refreshModalPreview;
         window.updatePerRepValue = updatePerRepValue;
         window.saveSessionFromModal = saveSessionFromModal;
         window.deleteSession = deleteSession;
