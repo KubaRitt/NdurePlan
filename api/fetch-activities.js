@@ -9,12 +9,17 @@ import { supabaseAdmin } from './supabase.js';
  * 2. For each new activity, pulls its laps and computes HR load + body
  *    load PER LAP from the athlete's saved HR zones (profiles.hr_zones),
  *    then sums those into the activity's total hr_load/body_load.
- * 3. Tries to match each activity to a *planned* session on the same date
- *    with the same sport, and links them (sets activities.session_id).
- * 4. Upserts everything into the `activities` table, including the raw
- *    laps and their per-lap loads (activities.laps / activities.laps_loads)
- *    so the lap-level breakdown is available later without re-fetching
- *    from Strava.
+ * 3. Upserts everything into the `activities` table, unlinked
+ *    (session_id = null), including the raw laps and their per-lap loads
+ *    (activities.laps / activities.laps_loads) so the lap-level breakdown
+ *    is available later without re-fetching from Strava.
+ *
+ * Activities are NOT auto-matched to planned sessions — linking is a
+ * manual step in the UI (Settings/session card → "Link Activity"), since
+ * a single planned session can correspond to several separate Strava
+ * activities (e.g. a watch auto-split a main effort and cooldown into
+ * two activities) and automatic date/sport matching can't reliably
+ * disambiguate that.
  */
 
 // Pause threshold: if paused time exceeds this fraction of a lap's elapsed
@@ -180,31 +185,6 @@ async function loadHrZones(userId) {
   return data?.hr_zones || {};
 }
 
-// Find an existing planned session on the same date + sport that doesn't
-// already have a linked activity, and return its id (or null).
-async function findMatchingSession(userId, dateStr, sport) {
-  const { data: sessions, error } = await supabaseAdmin
-    .from('sessions')
-    .select('id, time')
-    .eq('user_id', userId)
-    .eq('date', dateStr)
-    .eq('sport_type', sport);
-
-  if (error || !sessions || sessions.length === 0) return null;
-
-  const { data: linked } = await supabaseAdmin
-    .from('activities')
-    .select('session_id')
-    .in('session_id', sessions.map(s => s.id));
-
-  const linkedIds = new Set((linked || []).map(l => l.session_id));
-  const candidates = sessions.filter(s => !linkedIds.has(s.id));
-  if (candidates.length === 0) return null;
-
-  candidates.sort((a, b) => a.time.localeCompare(b.time));
-  return candidates[0].id;
-}
-
 async function updateStravaDescription(activityId, accessToken, bodyLoad, hrLoad) {
   try {
     const res = await fetch(`https://www.strava.com/api/v3/activities/${activityId}`, {
@@ -307,7 +287,7 @@ export default async function handler(req, res) {
     const newActivities = activitiesData.filter(a => !existingIds.has(String(a.id)));
 
     if (newActivities.length === 0) {
-      return res.status(200).json({ message: 'No new activities to sync', synced: 0, matched: 0 });
+      return res.status(200).json({ message: 'No new activities to sync', synced: 0 });
     }
 
     const hrZones = await loadHrZones(user_id);
@@ -317,7 +297,6 @@ export default async function handler(req, res) {
 
     // 4. Fetch laps + compute per-lap loads for each activity
     const rows = [];
-    let matchedCount = 0;
 
     for (const { activity, sport } of supported) {
       const laps = await fetchLapsForActivity(activity.id, accessToken);
@@ -340,12 +319,10 @@ export default async function handler(req, res) {
       }
 
       const totals = sumLapLoads(lapsLoads);
-      const sessionId = await findMatchingSession(user_id, dateStr, sport);
-      if (sessionId) matchedCount++;
 
       rows.push({
         user_id,
-        session_id: sessionId,
+        session_id: null,
         activity_uid: String(activity.id),
         name: activity.name || '',
         type: activity.type,
@@ -374,7 +351,7 @@ export default async function handler(req, res) {
     }
 
     if (rows.length === 0) {
-      return res.status(200).json({ message: 'No supported activity types to sync', synced: 0, matched: 0 });
+      return res.status(200).json({ message: 'No supported activity types to sync', synced: 0 });
     }
 
     // 5. Upsert into activities table
@@ -386,8 +363,7 @@ export default async function handler(req, res) {
     if (dbError) return res.status(500).json({ error: dbError.message });
 
     res.status(200).json({
-      synced: inserted?.length ?? rows.length,
-      matched: matchedCount
+      synced: inserted?.length ?? rows.length
     });
   } catch (err) {
     console.error(err);

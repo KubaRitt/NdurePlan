@@ -212,8 +212,9 @@ export async function fetchActivitiesByDateRange(startDateStr, endDateStr) {
   return data;
 }
 
-// Triggers a server-side sync: pulls recent Strava activities, computes
-// loads, and matches them against planned sessions on the same date/sport.
+// Triggers a server-side sync: pulls recent Strava activities and computes
+// loads. Activities come back unlinked — use linkActivityToSession() to
+// manually pair one or more of them with a planned session.
 export async function triggerStravaSync(dateFromStr, dateToStr) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("No active authenticated session.");
@@ -225,5 +226,42 @@ export async function triggerStravaSync(dateFromStr, dateToStr) {
   const res = await fetch(`/api/fetch-activities?${params.toString()}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Strava sync failed');
+  return data;
+}
+
+// Manually link a synced Strava activity to a planned session. Call once
+// per activity if linking several (e.g. a main set activity + a separate
+// cooldown activity) to the same session.
+export async function linkActivityToSession(activityId, sessionId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("No active authenticated session.");
+
+  const { data, error } = await supabase
+    .from('activities')
+    .update({ session_id: sessionId })
+    .eq('id', activityId)
+    .eq('user_id', user.id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// Remove the link between a Strava activity and whatever session it's
+// currently attached to (the activity itself is kept, just unlinked).
+export async function unlinkActivity(activityId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("No active authenticated session.");
+
+  const { data, error } = await supabase
+    .from('activities')
+    .update({ session_id: null })
+    .eq('id', activityId)
+    .eq('user_id', user.id)
+    .select()
+    .single();
+
+  if (error) throw error;
   return data;
 }

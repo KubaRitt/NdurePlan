@@ -328,6 +328,29 @@
         </div>
     </div>
 
+    <!-- Link Strava Activity Modal -->
+    <div id="link-activity-modal" class="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white border border-zinc-200 shadow-2xl rounded-2xl max-w-md w-full max-h-[85vh] flex flex-col">
+            <div class="p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50 shrink-0">
+                <div class="space-y-0.5">
+                    <h3 class="font-bold text-zinc-850">Link Strava Activity</h3>
+                    <p class="text-xs text-zinc-450">Select one or more activities that make up this session (e.g. main effort + a separate cooldown)</p>
+                </div>
+                <button onclick="closeLinkActivityModal()" class="p-1 px-2 rounded-lg border hover:bg-zinc-100">&times;</button>
+            </div>
+            <div class="p-4 space-y-2 overflow-y-auto" id="link-activity-list">
+                <!-- Filled dynamically by openLinkActivityModal() -->
+            </div>
+            <div class="p-4 border-t border-zinc-100 bg-zinc-50 flex items-center justify-between gap-3 rounded-b-2xl shrink-0">
+                <p class="text-[10px] text-zinc-400 font-mono" id="link-activity-count-label">0 selected</p>
+                <div class="flex items-center gap-3">
+                    <button onclick="closeLinkActivityModal()" class="px-4 py-2 hover:bg-zinc-200/70 border border-zinc-200 text-zinc-650 text-xs font-semibold rounded-lg">Cancel</button>
+                    <button onclick="confirmLinkActivities()" class="px-5 py-2 bg-zinc-950 text-white hover:bg-zinc-800 text-xs font-semibold rounded-lg">Link Selected</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Active Details Block Panel Template helpers -->
     <div id="workout-details-drawer" class="hidden"></div>
 
@@ -352,6 +375,8 @@
             getStravaConnectUrl,
             fetchActivitiesByDateRange,
             triggerStravaSync,
+            linkActivityToSession,
+            unlinkActivity,
             supabase
         } from './supabase_api.js';
         import { PARENT_SPORTS, DISCIPLINES, getParentSportForDiscipline } from './sports.js';
@@ -399,10 +424,17 @@
         let stravaConnected = false;
         let stravaSyncing = false;
 
-        // Given a session id, find its linked Strava activity (if any).
-        function findActivityForSession(sessionId) {
-            return trainingActivities.find(a => a.session_id === sessionId) || null;
+        // Given a session id, find its linked Strava activities (there can
+        // be more than one — e.g. a main effort + a separately-recorded
+        // cooldown that both belong to the same planned session).
+        function findActivitiesForSession(sessionId) {
+            return trainingActivities.filter(a => a.session_id === sessionId);
         }
+
+        // Tracks which session the link modal is currently open for, and
+        // which activity ids are checked while the picker is open.
+        let linkModalSessionId = null;
+        let linkModalSelectedIds = new Set();
 
         // Format a Date as YYYY-MM-DD using LOCAL time components (never UTC).
         // toISOString() converts to UTC first, which silently shifts the date
@@ -710,13 +742,106 @@
                 trainingActivities = await fetchActivitiesByDateRange('1900-01-01', '2999-12-31');
                 renderRightSidebar();
                 renderTimeline();
-                alert(`Synced ${result.synced ?? 0} activities, matched ${result.matched ?? 0} to planned sessions.`);
+                alert(`Synced ${result.synced ?? 0} new activities from Strava. Open a session to link them.`);
             } catch (err) {
                 console.error(err);
                 alert("Strava sync failed: " + err.message);
             } finally {
                 stravaSyncing = false;
                 renderSettingsStrava();
+            }
+        }
+
+        // --- MANUAL ACTIVITY LINKING ---
+
+        // Opens the link modal for a given planned session, pre-filtered to
+        // unlinked activities within a few days of that session's date
+        // (closest first) so the athlete isn't hunting through everything.
+        function openLinkActivityModal(sessionId) {
+            const session = trainingSessions.find(s => s.id === sessionId);
+            if (!session) return;
+
+            linkModalSessionId = sessionId;
+            linkModalSelectedIds = new Set();
+
+            const sessionDate = new Date(session.date + 'T00:00:00');
+            const candidates = trainingActivities
+                .filter(a => !a.session_id)
+                .map(a => {
+                    const activityDate = new Date(a.date + 'T00:00:00');
+                    const daysAway = Math.abs((activityDate - sessionDate) / 86400000);
+                    return { activity: a, daysAway };
+                })
+                .sort((a, b) => a.daysAway - b.daysAway);
+
+            const list = document.getElementById('link-activity-list');
+            if (candidates.length === 0) {
+                list.innerHTML = `<p class="text-xs text-zinc-400 text-center py-6">No unlinked Strava activities yet. Use "Sync Now" in Settings first.</p>`;
+            } else {
+                list.innerHTML = candidates.map(({ activity, daysAway }) => {
+                    const mins = Math.round(activity.duration_s / 60);
+                    const km = activity.distance_m ? (activity.distance_m / 1000).toFixed(2) + ' km' : '';
+                    const dayLabel = daysAway === 0 ? 'Same day' : `${Math.round(daysAway)}d away`;
+                    return `
+                        <label class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-150 hover:border-orange-300 hover:bg-orange-50/40 cursor-pointer transition-all">
+                            <input type="checkbox" data-activity-id="${activity.id}" onchange="toggleLinkActivitySelection('${activity.id}', this.checked)" class="w-4 h-4 accent-orange-600">
+                            <div class="min-w-0 flex-1">
+                                <div class="text-xs font-bold text-zinc-800 truncate">${escapeHtml(activity.name || activity.type)}</div>
+                                <div class="text-[10px] text-zinc-450 font-mono">${activity.date} &middot; ${dayLabel} &middot; ${mins} min ${km}</div>
+                            </div>
+                            <span class="text-[9px] uppercase font-bold text-zinc-400 shrink-0">${escapeHtml(activity.sport_type || activity.type)}</span>
+                        </label>
+                    `;
+                }).join('');
+            }
+
+            updateLinkActivityCountLabel();
+            document.getElementById('link-activity-modal').classList.remove('hidden');
+        }
+
+        function closeLinkActivityModal() {
+            document.getElementById('link-activity-modal').classList.add('hidden');
+            linkModalSessionId = null;
+            linkModalSelectedIds = new Set();
+        }
+
+        function toggleLinkActivitySelection(activityId, checked) {
+            if (checked) linkModalSelectedIds.add(activityId);
+            else linkModalSelectedIds.delete(activityId);
+            updateLinkActivityCountLabel();
+        }
+
+        function updateLinkActivityCountLabel() {
+            const label = document.getElementById('link-activity-count-label');
+            if (label) label.textContent = `${linkModalSelectedIds.size} selected`;
+        }
+
+        async function confirmLinkActivities() {
+            if (!linkModalSessionId || linkModalSelectedIds.size === 0) {
+                closeLinkActivityModal();
+                return;
+            }
+            try {
+                await Promise.all(
+                    [...linkModalSelectedIds].map(activityId => linkActivityToSession(activityId, linkModalSessionId))
+                );
+                trainingActivities = await fetchActivitiesByDateRange('1900-01-01', '2999-12-31');
+                closeLinkActivityModal();
+                renderRightSidebar();
+                renderTimeline();
+            } catch (err) {
+                alert("Couldn't link that activity: " + err.message);
+            }
+        }
+
+        async function unlinkActivityFromSession(activityId) {
+            try {
+                await unlinkActivity(activityId);
+                trainingActivities = await fetchActivitiesByDateRange('1900-01-01', '2999-12-31');
+                renderRightSidebar();
+                renderTimeline();
+            } catch (err) {
+                alert("Couldn't unlink that activity: " + err.message);
             }
         }
 
@@ -1014,7 +1139,7 @@
             card.title = tooltipParts.join(' — ');
 
             const baseBorder = parentSelected ? 'border-zinc-700 bg-zinc-800' : 'border-zinc-150 bg-zinc-50';
-            const isSynced = !!findActivityForSession(s.id);
+            const isSynced = findActivitiesForSession(s.id).length > 0;
             const syncedDot = isSynced ? `<span class="inline-block w-1.5 h-1.5 rounded-full bg-orange-500 ml-1 align-middle" title="Synced with Strava"></span>` : '';
 
             if (detailLevel === 'minimal') {
@@ -1386,65 +1511,87 @@
                 `;
                 blockBox.appendChild(header);
 
-                // If a Strava activity has been matched to this planned
-                // session, show a compact actual-vs-planned summary.
-                const matchedActivity = findActivityForSession(s.id);
-                if (matchedActivity) {
-                    const actualMin = Math.round(matchedActivity.duration_s / 60);
-                    const actualKm = matchedActivity.distance_m ? (matchedActivity.distance_m / 1000).toFixed(2) : null;
-                    const lapLoads = Array.isArray(matchedActivity.laps_loads) ? matchedActivity.laps_loads : [];
+                // Strava activities manually linked to this planned session
+                // (there can be more than one — e.g. main effort + a
+                // separately-recorded cooldown).
+                const linkedActivities = findActivitiesForSession(s.id);
 
-                    let lapRows = '';
-                    lapLoads.forEach((l, i) => {
-                        const lapMin = Math.round(l.duration_s / 60);
-                        const lapKm = l.distance_m ? (l.distance_m / 1000).toFixed(2) : '—';
-                        lapRows += `
-                            <tr class="border-t border-zinc-100/80">
-                                <td class="py-1 pr-2 text-zinc-400">${l.lap_index ?? i + 1}</td>
-                                <td class="py-1 pr-2">${lapMin}m</td>
-                                <td class="py-1 pr-2">${lapKm}km</td>
-                                <td class="py-1 pr-2">${l.avg_hr ?? '—'}</td>
-                                <td class="py-1 pr-2">${l.hr_load}</td>
-                                <td class="py-1">${l.body_load}</td>
-                            </tr>
+                if (linkedActivities.length === 0) {
+                    const linkPrompt = document.createElement('button');
+                    linkPrompt.onclick = () => openLinkActivityModal(s.id);
+                    linkPrompt.className = "w-full text-[10px] font-semibold text-zinc-500 border border-dashed border-zinc-300 rounded-lg py-2 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50/40 transition-all flex items-center justify-center gap-1.5";
+                    linkPrompt.innerHTML = `<i data-lucide="link" class="w-3 h-3"></i> Link Strava Activity`;
+                    blockBox.appendChild(linkPrompt);
+                } else {
+                    linkedActivities.forEach(activity => {
+                        const actualMin = Math.round(activity.duration_s / 60);
+                        const actualKm = activity.distance_m ? (activity.distance_m / 1000).toFixed(2) : null;
+                        const lapLoads = Array.isArray(activity.laps_loads) ? activity.laps_loads : [];
+
+                        let lapRows = '';
+                        lapLoads.forEach((l, i) => {
+                            const lapMin = Math.round(l.duration_s / 60);
+                            const lapKm = l.distance_m ? (l.distance_m / 1000).toFixed(2) : '—';
+                            lapRows += `
+                                <tr class="border-t border-zinc-100/80">
+                                    <td class="py-1 pr-2 text-zinc-400">${l.lap_index ?? i + 1}</td>
+                                    <td class="py-1 pr-2">${lapMin}m</td>
+                                    <td class="py-1 pr-2">${lapKm}km</td>
+                                    <td class="py-1 pr-2">${l.avg_hr ?? '—'}</td>
+                                    <td class="py-1 pr-2">${l.hr_load}</td>
+                                    <td class="py-1">${l.body_load}</td>
+                                </tr>
+                            `;
+                        });
+
+                        const lapTable = lapLoads.length > 0 ? `
+                            <details class="pt-1">
+                                <summary class="cursor-pointer text-orange-700 font-semibold text-[10px]">Lap breakdown (${lapLoads.length})</summary>
+                                <table class="w-full text-[9px] mt-1">
+                                    <thead>
+                                        <tr class="text-zinc-400 text-left">
+                                            <th class="py-1 pr-2 font-normal">#</th>
+                                            <th class="py-1 pr-2 font-normal">Time</th>
+                                            <th class="py-1 pr-2 font-normal">Dist</th>
+                                            <th class="py-1 pr-2 font-normal">Avg HR</th>
+                                            <th class="py-1 pr-2 font-normal">HR Load</th>
+                                            <th class="py-1 font-normal">Body Load</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${lapRows}</tbody>
+                                </table>
+                            </details>
+                        ` : '';
+
+                        const syncBox = document.createElement('div');
+                        syncBox.className = "p-2.5 rounded-lg border border-orange-200/60 bg-orange-50/60 text-[10px] font-mono space-y-1";
+                        syncBox.innerHTML = `
+                            <div class="flex items-center justify-between gap-1.5">
+                                <div class="flex items-center gap-1.5 font-bold text-orange-700 min-w-0">
+                                    <i data-lucide="check-circle-2" class="w-3 h-3 shrink-0"></i>
+                                    <span class="truncate">${escapeHtml(activity.name || activity.type)}</span>
+                                </div>
+                                <button data-unlink-activity="${activity.id}" class="text-zinc-400 hover:text-red-500 shrink-0" title="Unlink this activity">
+                                    <i data-lucide="unlink" class="w-3 h-3"></i>
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-1 text-zinc-600">
+                                <div>Actual time: <span class="font-bold text-zinc-800">${actualMin} min</span></div>
+                                ${actualKm ? `<div>Actual dist: <span class="font-bold text-zinc-800">${actualKm} km</span></div>` : ''}
+                                <div>HR load: <span class="font-bold text-zinc-800">${activity.hr_load ?? 0}</span></div>
+                                <div>Body load: <span class="font-bold text-zinc-800">${activity.body_load ?? 0}</span></div>
+                            </div>
+                            ${lapTable}
                         `;
+                        syncBox.querySelector('[data-unlink-activity]').onclick = () => unlinkActivityFromSession(activity.id);
+                        blockBox.appendChild(syncBox);
                     });
 
-                    const lapTable = lapLoads.length > 0 ? `
-                        <details class="pt-1">
-                            <summary class="cursor-pointer text-orange-700 font-semibold text-[10px]">Lap breakdown (${lapLoads.length})</summary>
-                            <table class="w-full text-[9px] mt-1">
-                                <thead>
-                                    <tr class="text-zinc-400 text-left">
-                                        <th class="py-1 pr-2 font-normal">#</th>
-                                        <th class="py-1 pr-2 font-normal">Time</th>
-                                        <th class="py-1 pr-2 font-normal">Dist</th>
-                                        <th class="py-1 pr-2 font-normal">Avg HR</th>
-                                        <th class="py-1 pr-2 font-normal">HR Load</th>
-                                        <th class="py-1 font-normal">Body Load</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${lapRows}</tbody>
-                            </table>
-                        </details>
-                    ` : '';
-
-                    const syncBox = document.createElement('div');
-                    syncBox.className = "p-2.5 rounded-lg border border-orange-200/60 bg-orange-50/60 text-[10px] font-mono space-y-1";
-                    syncBox.innerHTML = `
-                        <div class="flex items-center gap-1.5 font-bold text-orange-700">
-                            <i data-lucide="check-circle-2" class="w-3 h-3"></i>
-                            Synced with Strava &mdash; ${escapeHtml(matchedActivity.name || matchedActivity.type)}
-                        </div>
-                        <div class="grid grid-cols-2 gap-1 text-zinc-600">
-                            <div>Actual time: <span class="font-bold text-zinc-800">${actualMin} min</span></div>
-                            ${actualKm ? `<div>Actual dist: <span class="font-bold text-zinc-800">${actualKm} km</span></div>` : ''}
-                            <div>HR load: <span class="font-bold text-zinc-800">${matchedActivity.hr_load ?? 0}</span></div>
-                            <div>Body load: <span class="font-bold text-zinc-800">${matchedActivity.body_load ?? 0}</span></div>
-                        </div>
-                        ${lapTable}
-                    `;
-                    blockBox.appendChild(syncBox);
+                    const linkMoreBtn = document.createElement('button');
+                    linkMoreBtn.onclick = () => openLinkActivityModal(s.id);
+                    linkMoreBtn.className = "w-full text-[10px] font-semibold text-zinc-400 hover:text-orange-600 py-1 flex items-center justify-center gap-1";
+                    linkMoreBtn.innerHTML = `<i data-lucide="plus" class="w-3 h-3"></i> Link another activity`;
+                    blockBox.appendChild(linkMoreBtn);
                 }
 
                 // Whole-session workout intensity graph — the shape of the
@@ -2119,6 +2266,13 @@
         window.saveSessionFromModal = saveSessionFromModal;
         window.deleteSession = deleteSession;
         window.handleLogout = handleLogout;
+        window.connectStrava = connectStrava;
+        window.syncStravaNow = syncStravaNow;
+        window.openLinkActivityModal = openLinkActivityModal;
+        window.closeLinkActivityModal = closeLinkActivityModal;
+        window.toggleLinkActivitySelection = toggleLinkActivitySelection;
+        window.confirmLinkActivities = confirmLinkActivities;
+        window.unlinkActivityFromSession = unlinkActivityFromSession;
     </script>
 </body>
 </html>
