@@ -27,7 +27,12 @@ export default function handler(req, res) {
     client_id: process.env.STRAVA_CLIENT_ID,
     redirect_uri: redirectUri,
     response_type: 'code',
-    approval_prompt: 'auto',
+    // 'force' (not 'auto') makes Strava always show the permissions screen,
+    // even if this athlete already authorized the app before. Without this,
+    // reconnecting after a disconnect silently reuses whatever scope was
+    // granted the first time — so a missing "activity:read_all" grant can
+    // never actually be fixed by disconnecting and reconnecting.
+    approval_prompt: 'force',
     scope: 'activity:read_all',
     state: user_id
   });

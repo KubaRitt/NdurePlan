@@ -1,12 +1,21 @@
 import { supabaseAdmin } from './supabase.js';
 
 export default async function handler(req, res) {
-  const { code, state, error: stravaError } = req.query;
+  const { code, state, error: stravaError, scope } = req.query;
 
   // Athlete hit "Cancel" on the Strava authorization screen
   if (stravaError) return res.redirect('/dashboard.html?strava=denied');
 
   if (!code || !state) return res.status(400).send('Missing code or state');
+
+  // Strava includes the actually-granted scope on the callback (as a
+  // comma-separated list, e.g. "read,activity:read_all"). If the athlete
+  // unchecked activity access on the consent screen, catch that now with
+  // a clear message rather than storing a token that will 403 later.
+  const grantedScopes = (scope || '').split(',');
+  if (!grantedScopes.includes('activity:read_all')) {
+    return res.redirect('/dashboard.html?strava=scope_denied');
+  }
 
   const userId = state; // Supabase user id, passed through as `state`
 

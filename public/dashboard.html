@@ -642,6 +642,8 @@
                 if (stravaFlag === 'connected') {
                     stravaConnected = true;
                     setTimeout(() => alert('Strava connected! Use "Sync Now" in Settings to pull in your activities.'), 100);
+                } else if (stravaFlag === 'scope_denied') {
+                    setTimeout(() => alert('Strava was connected, but activity access wasn\'t granted, so syncing won\'t work. Try "Connect Strava" again in Settings and make sure "View data about your activities" is checked/allowed on the Strava screen.'), 100);
                 } else if (stravaFlag === 'error') {
                     setTimeout(() => alert('Something went wrong connecting Strava. Please try again.'), 100);
                 } else if (stravaFlag === 'denied') {
