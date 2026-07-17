@@ -373,6 +373,7 @@
             deleteTrainingSession,
             getStravaConnectionStatus,
             getStravaConnectUrl,
+            disconnectStrava,
             fetchActivitiesByDateRange,
             triggerStravaSync,
             linkActivityToSession,
@@ -426,15 +427,18 @@
 
         // Given a session id, find its linked Strava activities (there can
         // be more than one — e.g. a main effort + a separately-recorded
-        // cooldown that both belong to the same planned session).
+        // cooldown that both belong to the same planned session), sorted
+        // by the order the athlete picked them in when linking.
         function findActivitiesForSession(sessionId) {
-            return trainingActivities.filter(a => a.session_id === sessionId);
+            return trainingActivities
+                .filter(a => a.session_id === sessionId)
+                .sort((a, b) => (a.link_order ?? 999) - (b.link_order ?? 999));
         }
 
         // Tracks which session the link modal is currently open for, and
-        // which activity ids are checked while the picker is open.
+        // which activity ids are checked (in pick order) while it's open.
         let linkModalSessionId = null;
-        let linkModalSelectedIds = new Set();
+        let linkModalSelectedIds = [];
 
         // Format a Date as YYYY-MM-DD using LOCAL time components (never UTC).
         // toISOString() converts to UTC first, which silently shifts the date
@@ -710,9 +714,14 @@
                         <i data-lucide="check-circle-2" class="w-4 h-4"></i>
                         Connected to Strava
                     </div>
-                    <button onclick="syncStravaNow()" class="text-xs font-semibold bg-zinc-950 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg transition-all flex items-center gap-1.5">
-                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sync Now
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="syncStravaNow()" class="text-xs font-semibold bg-zinc-950 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg transition-all flex items-center gap-1.5">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Sync Now
+                        </button>
+                        <button onclick="disconnectStravaNow()" class="text-xs font-semibold text-zinc-400 hover:text-red-500 px-2 py-2" title="Disconnect (use this to reconnect with fresh permissions if activities aren't syncing)">
+                            Disconnect
+                        </button>
+                    </div>
                 `;
             } else {
                 box.innerHTML = `
@@ -731,6 +740,17 @@
                 window.location.href = url;
             } catch (err) {
                 alert("Couldn't start the Strava connection: " + err.message);
+            }
+        }
+
+        async function disconnectStravaNow() {
+            if (!confirm("Disconnect Strava? You'll need to reconnect and re-authorize to sync activities again.")) return;
+            try {
+                await disconnectStrava();
+                stravaConnected = false;
+                renderSettingsStrava();
+            } catch (err) {
+                alert("Couldn't disconnect Strava: " + err.message);
             }
         }
 
@@ -754,16 +774,53 @@
 
         // --- MANUAL ACTIVITY LINKING ---
 
-        // Opens the link modal for a given planned session, pre-filtered to
-        // unlinked activities within a few days of that session's date
-        // (closest first) so the athlete isn't hunting through everything.
-        function openLinkActivityModal(sessionId) {
+        // Opens the link modal for a given planned session. Automatically
+        // triggers a Strava sync scoped to that session's date (so the
+        // athlete doesn't need to remember to hit "Sync Now" first), then
+        // shows every unlinked activity from that day for picking.
+        // linkModalSelectedIds is an ARRAY (not a Set) so we can preserve
+        // the order the athlete clicks activities in.
+        async function openLinkActivityModal(sessionId) {
             const session = trainingSessions.find(s => s.id === sessionId);
             if (!session) return;
 
             linkModalSessionId = sessionId;
-            linkModalSelectedIds = new Set();
+            linkModalSelectedIds = [];
 
+            const list = document.getElementById('link-activity-list');
+            list.innerHTML = `
+                <div class="flex items-center justify-center gap-2 text-xs text-zinc-500 py-8">
+                    <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
+                    Fetching activities from Strava for ${session.date}&hellip;
+                </div>
+            `;
+            lucide.createIcons();
+            updateLinkActivityCountLabel();
+            document.getElementById('link-activity-modal').classList.remove('hidden');
+
+            // Pull a small window around the session date — covers cases
+            // where a late-night activity lands on the "wrong" calendar
+            // day depending on how Strava reports local time.
+            const sessionDate = new Date(session.date + 'T00:00:00');
+            const rangeFrom = new Date(sessionDate); rangeFrom.setDate(rangeFrom.getDate() - 1);
+            const rangeTo = new Date(sessionDate); rangeTo.setDate(rangeTo.getDate() + 1);
+
+            try {
+                await triggerStravaSync(toLocalDateStr(rangeFrom), toLocalDateStr(rangeTo));
+                trainingActivities = await fetchActivitiesByDateRange('1900-01-01', '2999-12-31');
+            } catch (err) {
+                list.innerHTML = `
+                    <div class="text-xs text-red-600 text-center py-6 space-y-2">
+                        <p>Couldn't fetch from Strava: ${escapeHtml(err.message)}</p>
+                        <p class="text-zinc-400">Showing any previously synced activities near this date instead.</p>
+                    </div>
+                `;
+            }
+
+            renderLinkActivityCandidates(session);
+        }
+
+        function renderLinkActivityCandidates(session) {
             const sessionDate = new Date(session.date + 'T00:00:00');
             const candidates = trainingActivities
                 .filter(a => !a.session_id)
@@ -772,59 +829,90 @@
                     const daysAway = Math.abs((activityDate - sessionDate) / 86400000);
                     return { activity: a, daysAway };
                 })
-                .sort((a, b) => a.daysAway - b.daysAway);
+                .filter(({ daysAway }) => daysAway <= 1)
+                .sort((a, b) => {
+                    if (a.daysAway !== b.daysAway) return a.daysAway - b.daysAway;
+                    return new Date(a.activity.strava_start) - new Date(b.activity.strava_start);
+                });
 
             const list = document.getElementById('link-activity-list');
             if (candidates.length === 0) {
-                list.innerHTML = `<p class="text-xs text-zinc-400 text-center py-6">No unlinked Strava activities yet. Use "Sync Now" in Settings first.</p>`;
-            } else {
-                list.innerHTML = candidates.map(({ activity, daysAway }) => {
-                    const mins = Math.round(activity.duration_s / 60);
-                    const km = activity.distance_m ? (activity.distance_m / 1000).toFixed(2) + ' km' : '';
-                    const dayLabel = daysAway === 0 ? 'Same day' : `${Math.round(daysAway)}d away`;
-                    return `
-                        <label class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-150 hover:border-orange-300 hover:bg-orange-50/40 cursor-pointer transition-all">
-                            <input type="checkbox" data-activity-id="${activity.id}" onchange="toggleLinkActivitySelection('${activity.id}', this.checked)" class="w-4 h-4 accent-orange-600">
-                            <div class="min-w-0 flex-1">
-                                <div class="text-xs font-bold text-zinc-800 truncate">${escapeHtml(activity.name || activity.type)}</div>
-                                <div class="text-[10px] text-zinc-450 font-mono">${activity.date} &middot; ${dayLabel} &middot; ${mins} min ${km}</div>
-                            </div>
-                            <span class="text-[9px] uppercase font-bold text-zinc-400 shrink-0">${escapeHtml(activity.sport_type || activity.type)}</span>
-                        </label>
-                    `;
-                }).join('');
+                list.innerHTML = `<p class="text-xs text-zinc-400 text-center py-6">No unlinked Strava activities found within a day of ${session.date}.</p>`;
+                lucide.createIcons();
+                return;
             }
 
-            updateLinkActivityCountLabel();
-            document.getElementById('link-activity-modal').classList.remove('hidden');
+            list.innerHTML = candidates.map(({ activity, daysAway }) => {
+                const mins = Math.round(activity.duration_s / 60);
+                const km = activity.distance_m ? (activity.distance_m / 1000).toFixed(2) + ' km' : '';
+                const dayLabel = daysAway === 0 ? 'Same day' : `${Math.round(daysAway)}d away`;
+                return `
+                    <label data-activity-row="${activity.id}" class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-150 hover:border-orange-300 hover:bg-orange-50/40 cursor-pointer transition-all">
+                        <span data-order-badge="${activity.id}" class="hidden w-5 h-5 rounded-full bg-orange-600 text-white text-[10px] font-bold items-center justify-center shrink-0"></span>
+                        <input type="checkbox" data-activity-id="${activity.id}" onchange="toggleLinkActivitySelection('${activity.id}', this.checked)" class="w-4 h-4 accent-orange-600">
+                        <div class="min-w-0 flex-1">
+                            <div class="text-xs font-bold text-zinc-800 truncate">${escapeHtml(activity.name || activity.type)}</div>
+                            <div class="text-[10px] text-zinc-450 font-mono">${activity.date} &middot; ${dayLabel} &middot; ${mins} min ${km}</div>
+                        </div>
+                        <span class="text-[9px] uppercase font-bold text-zinc-400 shrink-0">${escapeHtml(activity.sport_type || activity.type)}</span>
+                    </label>
+                `;
+            }).join('');
+            lucide.createIcons();
         }
 
         function closeLinkActivityModal() {
             document.getElementById('link-activity-modal').classList.add('hidden');
             linkModalSessionId = null;
-            linkModalSelectedIds = new Set();
+            linkModalSelectedIds = [];
         }
 
+        // Selecting builds an ordered list (pick order = link order, so
+        // e.g. "main effort" then "cooldown" stay in that sequence when
+        // displayed later). Unchecking removes it from wherever it was.
         function toggleLinkActivitySelection(activityId, checked) {
-            if (checked) linkModalSelectedIds.add(activityId);
-            else linkModalSelectedIds.delete(activityId);
+            if (checked) {
+                if (!linkModalSelectedIds.includes(activityId)) linkModalSelectedIds.push(activityId);
+            } else {
+                linkModalSelectedIds = linkModalSelectedIds.filter(id => id !== activityId);
+            }
+            renderLinkActivityOrderBadges();
             updateLinkActivityCountLabel();
+        }
+
+        function renderLinkActivityOrderBadges() {
+            document.querySelectorAll('[data-order-badge]').forEach(badge => {
+                const id = badge.getAttribute('data-order-badge');
+                const position = linkModalSelectedIds.indexOf(id);
+                if (position === -1) {
+                    badge.classList.add('hidden');
+                    badge.classList.remove('flex');
+                } else {
+                    badge.textContent = position + 1;
+                    badge.classList.remove('hidden');
+                    badge.classList.add('flex');
+                }
+            });
         }
 
         function updateLinkActivityCountLabel() {
             const label = document.getElementById('link-activity-count-label');
-            if (label) label.textContent = `${linkModalSelectedIds.size} selected`;
+            if (label) label.textContent = `${linkModalSelectedIds.length} selected${linkModalSelectedIds.length > 1 ? ' — linked in the order picked' : ''}`;
         }
 
         async function confirmLinkActivities() {
-            if (!linkModalSessionId || linkModalSelectedIds.size === 0) {
+            if (!linkModalSessionId || linkModalSelectedIds.length === 0) {
                 closeLinkActivityModal();
                 return;
             }
+            const sessionId = linkModalSessionId;
+            const orderedIds = [...linkModalSelectedIds];
             try {
-                await Promise.all(
-                    [...linkModalSelectedIds].map(activityId => linkActivityToSession(activityId, linkModalSessionId))
-                );
+                // Sequential, not Promise.all — so link_order is written
+                // reliably in the order the athlete picked.
+                for (let i = 0; i < orderedIds.length; i++) {
+                    await linkActivityToSession(orderedIds[i], sessionId, i + 1);
+                }
                 trainingActivities = await fetchActivitiesByDateRange('1900-01-01', '2999-12-31');
                 closeLinkActivityModal();
                 renderRightSidebar();
@@ -2267,6 +2355,7 @@
         window.deleteSession = deleteSession;
         window.handleLogout = handleLogout;
         window.connectStrava = connectStrava;
+        window.disconnectStravaNow = disconnectStravaNow;
         window.syncStravaNow = syncStravaNow;
         window.openLinkActivityModal = openLinkActivityModal;
         window.closeLinkActivityModal = closeLinkActivityModal;

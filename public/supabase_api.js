@@ -194,6 +194,22 @@ export async function getStravaConnectUrl() {
   return `/api/strava-connect?user_id=${encodeURIComponent(user.id)}`;
 }
 
+// Deletes the athlete's stored Strava tokens. Useful for forcing a clean
+// re-consent (e.g. if the original authorization didn't grant activity
+// read access) — call this, then getStravaConnectUrl() again.
+export async function disconnectStrava() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("No active authenticated session.");
+
+  const { error } = await supabase
+    .from('strava_tokens')
+    .delete()
+    .eq('user_id', user.id);
+
+  if (error) throw error;
+  return true;
+}
+
 // Fetch synced Strava activities within a date range, including any
 // linked planned session (activities.session_id).
 export async function fetchActivitiesByDateRange(startDateStr, endDateStr) {
@@ -225,20 +241,27 @@ export async function triggerStravaSync(dateFromStr, dateToStr) {
 
   const res = await fetch(`/api/fetch-activities?${params.toString()}`);
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Strava sync failed');
+  if (!res.ok) {
+    const message = typeof data.error === 'string'
+      ? data.error
+      : (data.error?.message || JSON.stringify(data.error) || `Strava sync failed (${res.status})`);
+    throw new Error(message);
+  }
   return data;
 }
 
 // Manually link a synced Strava activity to a planned session. Call once
 // per activity if linking several (e.g. a main set activity + a separate
-// cooldown activity) to the same session.
-export async function linkActivityToSession(activityId, sessionId) {
+// cooldown activity) to the same session. `order` (1, 2, 3...) records the
+// sequence the athlete picked them in, so they display in that order later
+// rather than just whatever order Strava returned them in.
+export async function linkActivityToSession(activityId, sessionId, order = null) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("No active authenticated session.");
 
   const { data, error } = await supabase
     .from('activities')
-    .update({ session_id: sessionId })
+    .update({ session_id: sessionId, link_order: order })
     .eq('id', activityId)
     .eq('user_id', user.id)
     .select()
@@ -256,7 +279,7 @@ export async function unlinkActivity(activityId) {
 
   const { data, error } = await supabase
     .from('activities')
-    .update({ session_id: null })
+    .update({ session_id: null, link_order: null })
     .eq('id', activityId)
     .eq('user_id', user.id)
     .select()

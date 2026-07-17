@@ -270,7 +270,18 @@ export default async function handler(req, res) {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     const activitiesData = await activitiesRes.json();
-    if (!activitiesRes.ok) return res.status(activitiesRes.status).json({ error: activitiesData });
+    if (!activitiesRes.ok) {
+      // Strava returns 401 for an invalid/expired token and 403 when the
+      // token is valid but wasn't granted activity read permission (e.g.
+      // the athlete unchecked "View data about your activities" on the
+      // consent screen, or connected before that scope was requested).
+      // Either way, the fix is the same: reconnect Strava.
+      const stravaMessage = activitiesData?.message || JSON.stringify(activitiesData);
+      const hint = (activitiesRes.status === 401 || activitiesRes.status === 403)
+        ? ' — try disconnecting and reconnecting Strava, making sure to allow activity data access on the consent screen.'
+        : '';
+      return res.status(activitiesRes.status).json({ error: `Strava API error: ${stravaMessage}${hint}` });
+    }
 
     if (activitiesData.length === 50) {
       console.warn(`[fetch-activities] Hit the 50-activity page limit for user ${user_id} — consider adding pagination or narrowing date_from/date_to.`);
