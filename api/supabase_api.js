@@ -164,3 +164,66 @@ export async function deleteTrainingSession(sessionId) {
   if (error) throw error;
   return true;
 }
+
+/**
+ * 4. STRAVA INTEGRATION API
+ */
+
+// Whether the current athlete has a Strava connection on file. Only checks
+// for the *existence* of a token row — never reads the tokens themselves,
+// those stay server-side.
+export async function getStravaConnectionStatus() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("No active authenticated session.");
+
+  const { data, error } = await supabase
+    .from('strava_tokens')
+    .select('user_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return !!data;
+}
+
+// Builds the URL that kicks off the Strava OAuth flow for the current
+// athlete. Navigate to this (e.g. window.location.href = url).
+export async function getStravaConnectUrl() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("No active authenticated session.");
+  return `/api/strava-connect?user_id=${encodeURIComponent(user.id)}`;
+}
+
+// Fetch synced Strava activities within a date range, including any
+// linked planned session (activities.session_id).
+export async function fetchActivitiesByDateRange(startDateStr, endDateStr) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("No active authenticated session.");
+
+  const { data, error } = await supabase
+    .from('activities')
+    .select('*')
+    .eq('user_id', user.id)
+    .gte('date', startDateStr)
+    .lte('date', endDateStr)
+    .order('strava_start', { ascending: true });
+
+  if (error) throw error;
+  return data;
+}
+
+// Triggers a server-side sync: pulls recent Strava activities, computes
+// loads, and matches them against planned sessions on the same date/sport.
+export async function triggerStravaSync(dateFromStr, dateToStr) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("No active authenticated session.");
+
+  const params = new URLSearchParams({ user_id: user.id });
+  if (dateFromStr) params.set('date_from', dateFromStr);
+  if (dateToStr) params.set('date_to', dateToStr);
+
+  const res = await fetch(`/api/fetch-activities?${params.toString()}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Strava sync failed');
+  return data;
+}
