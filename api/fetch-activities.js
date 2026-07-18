@@ -271,16 +271,16 @@ export default async function handler(req, res) {
     });
     const activitiesData = await activitiesRes.json();
     if (!activitiesRes.ok) {
-      // Strava returns 401 for an invalid/expired token and 403 when the
-      // token is valid but wasn't granted activity read permission (e.g.
-      // the athlete unchecked "View data about your activities" on the
-      // consent screen, or connected before that scope was requested).
-      // Either way, the fix is the same: reconnect Strava.
-      const stravaMessage = activitiesData?.message || JSON.stringify(activitiesData);
-      const hint = (activitiesRes.status === 401 || activitiesRes.status === 403)
-        ? ' — try disconnecting and reconnecting Strava, making sure to allow activity data access on the consent screen.'
-        : '';
-      return res.status(activitiesRes.status).json({ error: `Strava API error: ${stravaMessage}${hint}` });
+      // Strava's error body is usually { message, errors: [{resource,
+      // field, code}] } — the `errors` array is where the *actual* reason
+      // lives (e.g. field: "activity:read_permission", code: "missing"
+      // vs. field: "access_token", code: "invalid"). Surface all of it —
+      // guessing which one applies from the status code alone isn't
+      // reliable enough to act on.
+      console.error('Strava activities request failed', activitiesRes.status, JSON.stringify(activitiesData));
+      return res.status(activitiesRes.status).json({
+        error: `Strava API error (${activitiesRes.status}): ${JSON.stringify(activitiesData)}`
+      });
     }
 
     if (activitiesData.length === 50) {
