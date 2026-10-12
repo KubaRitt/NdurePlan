@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <title>NdurePlan</title>
+    <meta name="description" content="Training planner and diary for endurance athletes: weekly plan, interval blocks, heart rate zones, load and a daily log.">
+    <style>
+        :root { --ink: #18181b; --muted: #52525b; --line: #e4e4e7; --bg: #ffffff; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+        a { color: inherit; }
+        .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+        header { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+        .logo { font-weight: 700; text-decoration: none; }
+        nav a { margin-left: 20px; text-decoration: none; color: var(--muted); }
+        nav a:hover { color: var(--ink); }
+        h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; margin: 56px 0 16px; max-width: 18ch; }
+        .lead { color: var(--muted); max-width: 52ch; margin: 0 0 28px; }
+        .btn { display: inline-block; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; }
+        .btn.primary { background: var(--ink); color: #fff; }
+        .btn.secondary { border: 1px solid var(--line); margin-left: 8px; }
+        figure { margin: 48px 0 0; }
+        figure img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; display: block; }
+        figcaption { color: var(--muted); font-size: .875rem; margin-top: 8px; }
+        ul { padding-left: 1.2em; color: var(--muted); max-width: 60ch; }
+        li { margin: 6px 0; }
+        h2 { font-size: 1.25rem; margin: 56px 0 8px; }
+        footer { border-top: 1px solid var(--line); margin-top: 64px; padding: 24px 0; color: var(--muted); font-size: .875rem; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="index.html">NdurePlan</a>
+            <nav><a href="login.html">Sign in</a></nav>
+        </header>
+
+        <h1>Plan the week. Check it against what you ran.</h1>
+        <p class="lead">A training planner and diary for runners and orienteers. Plan the week from blocks with your own heart rate zones, tick sessions off, and note how they went and how the legs feel.</p>
+        <a class="btn primary" href="login.html">Sign in</a>
+        <a class="btn secondary" href="login.html?tab=register">Create account</a>
+
+        <figure>
+            <img src="app-week.jpg" width="1440" height="900" alt="NdurePlan on a computer: calendar and week summary on the left, the weeks in the middle, the selected day's diary on the right.">
+            <figcaption>A race week: threshold on Tuesday, easy bike and strength on Wednesday, speed on Thursday, two races at the weekend.</figcaption>
+        </figure>
+
+        <h2>What it does</h2>
+        <ul>
+            <li>Blocks to the second, with repeats, jog or standing rest and per-rep targets: 4 × 6:00 AP2 with 1:00 jog, or 8 × 200 m in 0:35.</li>
+            <li>Heart rate zones per sport (Easy, AP1, AP2, AP3) plus sprints. Strength sessions use RPE instead.</li>
+            <li>Weekly time, running kilometres and load, planned against done, with notes when the week looks too hard.</li>
+            <li>A diary for each day: time, distance, heart rate and RPE per session, plus sleep, resting HR, legs and knee pain.</li>
+            <li>Templates for your usual sessions and one-tap copy of a whole week.</li>
+        </ul>
+
+        <footer>&copy; 2026 NdurePlan</footer>
+    </div>
+</body>
+</html>

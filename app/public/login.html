@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <title>Sign in · NdurePlan</title>
+    <link rel="stylesheet" href="css/app.css">
+    <script>
+        try { const t = JSON.parse(localStorage.getItem('ndure.theme')); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+    </script>
+    <style>
+        .auth-top { display: flex; justify-content: space-between; align-items: center; height: 56px; padding: 0 16px; max-width: 960px; margin: 0 auto; }
+        .auth-top a { color: var(--ink-2); }
+        .auth { max-width: 400px; margin: 24px auto 64px; padding: 0 16px; }
+        .auth .card { padding: 24px 20px; gap: 16px; }
+        .auth h1 { font-size: 1.4rem; }
+        .auth .seg { width: 100%; }
+        .auth form { display: flex; flex-direction: column; gap: 14px; }
+        .auth .btn.primary { width: 100%; }
+        .msg { padding: 10px 12px; border-radius: var(--r-sm); font-size: .92rem; background: var(--surface-2); }
+        .msg.error { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); }
+        .msg.success { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok); }
+    </style>
+</head>
+<body>
+    <header class="auth-top">
+        <a class="brand" href="index.html">NdurePlan</a>
+        <a href="index.html">Back</a>
+    </header>
+
+    <main class="auth">
+        <div class="card">
+            <div class="seg" role="group" aria-label="Sign in or create an account">
+                <button type="button" id="tab-login" class="on" aria-pressed="true">Sign in</button>
+                <button type="button" id="tab-register" aria-pressed="false">Create account</button>
+            </div>
+            <h1 id="auth-title">Sign in</h1>
+            <form id="auth-form" novalidate>
+                <label class="field"><span>Email</span>
+                    <input type="email" id="email" autocomplete="email" required placeholder="name@example.com">
+                </label>
+                <label class="field"><span>Password</span>
+                    <input type="password" id="password" autocomplete="current-password" required minlength="6">
+                </label>
+                <p id="auth-message" class="msg" role="status" hidden></p>
+                <button type="submit" id="auth-submit" class="btn primary">Sign in</button>
+            </form>
+        </div>
+    </main>
+
+    <script type="module">
+        import { signUpAthlete, signInAthlete, getAuthSession } from './supabase_api.js';
+
+        let mode = 'login';
+        const $ = id => document.getElementById(id);
+
+        // Already signed in: go straight to the app.
+        getAuthSession().then(s => { if (s) window.location.replace('dashboard.html'); }).catch(() => {});
+
+        function setMode(next) {
+            mode = next;
+            const login = next === 'login';
+            $('tab-login').classList.toggle('on', login);
+            $('tab-register').classList.toggle('on', !login);
+            $('tab-login').setAttribute('aria-pressed', String(login));
+            $('tab-register').setAttribute('aria-pressed', String(!login));
+            $('auth-title').textContent = login ? 'Sign in' : 'Create account';
+            $('auth-submit').textContent = login ? 'Sign in' : 'Create account';
+            $('password').setAttribute('autocomplete', login ? 'current-password' : 'new-password');
+            $('auth-message').hidden = true;
+        }
+
+        function show(text, kind = 'info') {
+            const m = $('auth-message');
+            m.className = `msg ${kind}`;
+            m.textContent = text;
+            m.hidden = false;
+        }
+
+        $('tab-login').addEventListener('click', () => setMode('login'));
+        $('tab-register').addEventListener('click', () => setMode('register'));
+        if (new URLSearchParams(location.search).get('tab') === 'register') setMode('register');
+
+        $('auth-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const email = $('email').value.trim();
+            const password = $('password').value;
+            if (!email || !password) { show('Enter your email and password.', 'error'); return; }
+            if (password.length < 6) { show('The password needs at least 6 characters.', 'error'); return; }
+            const btn = $('auth-submit');
+            btn.disabled = true;
+            try {
+                if (mode === 'login') {
+                    show('Signing in…');
+                    await signInAthlete(email, password);
+                } else {
+                    show('Creating your account…');
+                    const data = await signUpAthlete(email, password);
+                    // With email confirmation on in Supabase there is no session yet.
+                    if (!data.session) {
+                        show('Account created. Check your email and confirm it, then sign in.', 'success');
+                        btn.disabled = false;
+                        return;
+                    }
+                }
+                window.location.replace('dashboard.html');
+            } catch (err) {
+                show(err.message || 'Something went wrong. Please try again.', 'error');
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

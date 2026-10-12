@@ -1,0 +1,2 @@
+-- Replaced by migrations/20261007_planner_diary.sql (it also allows 'strength').
+-- Run that file instead. This one can be deleted.
