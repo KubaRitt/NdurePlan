@@ -6,7 +6,12 @@ web/
   garmin.html   Garmin Personal API test page (signed-in only)
   config.js     Supabase URL + publishable key (safe to ship)
   style.css
+  vercel.json   static hosting headers
 supabase/functions/garmin/index.ts   edge function (deployed)
+templates/
+  ndure-training-day.pdf    1 day, A4 portrait
+  ndure-training-week.pdf   7 days, A4 landscape
+  diary-to-json-prompt.md   prompt that turns any diary into import JSON
 ```
 
 ## How it fits together
@@ -22,6 +27,18 @@ the CORS block you hit on a public domain, because Garmin is only ever called se
 cd web && python3 -m http.server 5173
 ```
 Open http://localhost:5173
+
+## Push to GitHub
+
+```
+git init
+git add .
+git commit -m "Ndure: auth + Garmin test page"
+git branch -M main
+git remote add origin https://github.com/<you>/ndure.git
+git push -u origin main
+```
+`_backup/` is git-ignored.
 
 ## Deploy (Vercel)
 
