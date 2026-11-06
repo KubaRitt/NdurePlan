@@ -1,12 +1,11 @@
 # Ndure — auth + Garmin test
 
 ```
-web/
-  index.html    sign in / create account / Google
-  garmin.html   Garmin Personal API test page (signed-in only)
-  config.js     Supabase URL + publishable key (safe to ship)
-  style.css
-  vercel.json   static hosting headers
+index.html    sign in / create account / Google
+garmin.html   Garmin Personal API test page (signed-in only)
+config.js     Supabase URL + publishable key (safe to ship)
+style.css
+vercel.json   static hosting headers
 supabase/functions/garmin/index.ts   edge function (deployed)
 templates/
   ndure-training-day.pdf    1 day, A4 portrait
@@ -24,7 +23,7 @@ the CORS block you hit on a public domain, because Garmin is only ever called se
 ## Run locally
 
 ```
-cd web && python3 -m http.server 5173
+python3 -m http.server 5173
 ```
 Open http://localhost:5173
 
@@ -42,7 +41,8 @@ git push -u origin main
 
 ## Deploy (Vercel)
 
-Import the repo, set the root directory to `web`, no build step.
+Import the repo, leave the root directory as is, no build step.
+GitHub Pages also works: Settings → Pages → Deploy from branch `main`, folder `/`.
 Then add the Vercel URL in Supabase → Authentication → URL Configuration
 (Site URL + Redirect URLs, e.g. `https://ndure.vercel.app/**`).
 
