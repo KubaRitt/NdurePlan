@@ -39,7 +39,19 @@
 
       <section class="card">
         <h2>3 · Call an endpoint</h2>
-        <p class="hint">Any https URL on a garmin.com host from the Personal API reference. The token is added for you.</p>
+        <p class="hint">Any https URL on a garmin.com host. The token is added for you. Presets fill in the last 7 days.</p>
+        <div class="row" style="margin-bottom:10px">
+          <select id="base" style="flex:2">
+            <option>https://personal.connectapi.garmin.com</option>
+            <option>https://connectapi.garmin.com</option>
+          </select>
+        </div>
+        <div class="row" style="margin-bottom:10px" id="presets">
+          <button class="inline" data-p="/activitylist-service/activities/search/activities?start=0&limit=20&startDate={from}&endDate={to}">Activities</button>
+          <button class="inline" data-p="/usersummary-service/v2/dailysummaries?startDate={from}&endDate={to}">Daily summaries</button>
+          <button class="inline" data-p="/sleep-service/sleep/dailySleep?date={to}">Sleep</button>
+          <button class="inline" data-p="/hrv-service/hrv/daily/{from}/{to}">HRV</button>
+        </div>
         <div class="row">
           <input id="url" placeholder="https://…garmin.com/…" style="flex:4">
           <button class="primary inline" id="go">Send GET</button>
@@ -124,6 +136,15 @@
       try { localStorage.setItem("ndure.lastUrl", url); } catch {}
     };
     try { const u = localStorage.getItem("ndure.lastUrl"); if (u) $("url").value = u; } catch {}
+
+    const ymd = (d) => d.toLocaleDateString("sv-SE"); // YYYY-MM-DD, local
+    document.querySelectorAll("#presets button").forEach((b) => {
+      b.onclick = () => {
+        const to = new Date(), from = new Date(Date.now() - 6 * 864e5);
+        $("url").value = $("base").value + b.dataset.p.replaceAll("{from}", ymd(from)).replaceAll("{to}", ymd(to));
+        $("go").click();
+      };
+    });
   </script>
 </body>
 </html>
