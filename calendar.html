@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ndure · Calendar</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .layout { max-width: 1600px; margin: 0 auto; padding: 20px 16px 48px; display: grid; gap: 20px; grid-template-columns: 280px minmax(0, 1fr) 360px; align-items: start; }
+    @media (max-width: 1200px) { .layout { grid-template-columns: 260px minmax(0, 1fr); } .detail { grid-column: 1 / -1; } }
+    @media (max-width: 760px) {
+      .layout { grid-template-columns: 1fr; padding-top: 12px; }
+      .layout > .mid { order: -2; } .layout > .detail { order: -1; }
+      .tl { max-height: none !important; }
+    }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+    section > .panel + .panel { margin-top: 16px; }
+    .ph { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line-2); }
+    .ph h2 { margin: 0; font-size: 13px; }
+    .nav-btn { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; font-size: 13px; color: var(--faint); }
+
+    /* mini calendar */
+    .mini { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px 2px; text-align: center; font-size: 12px; }
+    .mini .dow { color: var(--faint); font-weight: 700; font-size: 11px; }
+    .mini button { border: 0; background: none; padding: 0; height: 32px; border-radius: 6px; font-weight: 550; color: var(--text-2); position: relative; font-variant-numeric: tabular-nums; }
+    .mini button:hover { background: var(--panel-2); }
+    .mini button.out { color: #d4d4d8; }
+    .mini button.today { color: var(--text); font-weight: 800; }
+    .mini button.sel { background: var(--text); color: #fff; }
+    .mini button .dots { position: absolute; left: 0; right: 0; bottom: 3px; display: flex; justify-content: center; gap: 2px; }
+    .mini button .dots i { width: 4px; height: 4px; border-radius: 50%; }
+
+    /* totals */
+    .tot { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .tot div { background: var(--panel-2); border-radius: 6px; padding: 10px; }
+    .tot b { display: block; font-size: 18px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .tot span { font-size: 11px; color: var(--mute); font-weight: 600; }
+    .fam-bars { margin-top: 12px; display: grid; gap: 6px; }
+    .fam-bars .fb { display: grid; grid-template-columns: 62px 1fr 44px; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
+    .fam-bars .bar { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+    .fam-bars .bar i { display: block; height: 100%; border-radius: 3px; transform-origin: left; animation: grow .6s var(--spring) both; }
+    @keyframes grow { from { transform: scaleX(0); } }
+
+    /* toolbar */
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-bottom: 12px; margin-bottom: 8px; border-bottom: 1px solid var(--line-2); }
+    .toolbar h2 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: .02em; }
+    .toolbar .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* timeline */
+    .tl { display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 190px); overflow-y: auto; scrollbar-width: thin; }
+    .day { flex-shrink: 0; display: flex; align-items: stretch; gap: 10px; padding: 0 8px; border-radius: var(--radius); border: 1px solid transparent; cursor: pointer; min-height: 52px; transition: border-color .15s, background .15s; }
+    .day:hover { border-color: var(--line); }
+    .day.we { background: #fafafa; }
+    .day.sel { background: var(--text); border-color: var(--text); color: #fff; }
+    .day .dc { width: 46px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; padding: 6px 0; }
+    .day .dc small { font-size: 11px; font-weight: 700; color: var(--faint); }
+    .day .dc b { font-size: 16px; font-variant-numeric: tabular-nums; }
+    .day .dc em { font-style: normal; font-size: 10px; color: var(--mute); margin-top: 2px; }
+    .day.sel .dc small, .day.sel .dc em { color: #a1a1aa; }
+    .day .vl { width: 1px; background: var(--line-2); margin: 8px 0; flex: none; }
+    .day.sel .vl { background: #3f3f46; }
+    .day .body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 0; }
+    .feel { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; flex: none; }
+    .tag { font-size: 11px; font-weight: 600; color: var(--mute); background: var(--panel-2); border-radius: 4px; padding: 1px 6px; }
+    .day.sel .tag { background: #27272a; color: #d4d4d8; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 550; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; background: var(--panel); color: var(--text); max-width: 100%; animation: rise .4s var(--spring) both; }
+    .chip .dot { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+    .chip .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chip .v { color: var(--mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .chip.unlinked { border-style: dashed; }
+    .chip.garmin { background: var(--panel-2); border-color: transparent; color: var(--text-2); }
+    .chip .w { font-size: 10px; color: var(--ok); }
+    .day.sel .chip { background: #27272a; border-color: #3f3f46; color: #fff; }
+    .day.sel .chip .v { color: #a1a1aa; }
+    .day .snip { font-size: 12px; color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 140px; min-width: 0; }
+    .day.sel .snip { color: #a1a1aa; }
+    .month-div { font-size: 12px; font-weight: 600; color: var(--mute); padding: 14px 8px 4px; }
+
+    /* detail */
+    .detail .dh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .detail .dh h2 { font-size: 16px; margin: 0; letter-spacing: -.01em; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+    .stats div { background: var(--panel-2); border-radius: 6px; padding: 8px 10px; }
+    .stats b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
+    .stats span { font-size: 11px; color: var(--mute); font-weight: 600; }
+    .sec { font-size: 11px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; margin: 16px 0 6px; }
+    .note { white-space: pre-wrap; font-size: 13px; color: var(--text-2); }
+    .sess { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; animation: rise .4s var(--spring) both; }
+    .sess .st { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+    .sess .st .dot { width: 8px; height: 8px; border-radius: 2px; }
+    .sess .kv { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--mute); margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .sess .kv b { color: var(--text-2); font-weight: 600; }
+    .sess .gm { margin-top: 10px; background: var(--panel-2); border-radius: 6px; padding: 8px 10px; font-size: 12px; }
+    .sess .gm .gt { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; color: var(--text-2); }
+    .sess select { margin-top: 8px; font-size: 12px; padding: 6px 8px; }
+    .empty { color: var(--faint); font-size: 13px; padding: 10px 0; }
+
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--text); color: #fff; font-size: 13px; font-weight: 550; padding: 10px 16px; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.15); transition: transform .4s var(--spring), opacity .2s; z-index: 60; max-width: calc(100vw - 32px); }
+    .toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .toast.err { background: var(--danger); }
+    .busy { opacity: .6; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <header class="appbar">
+    <div class="in">
+      <div style="display:flex;align-items:center">
+        <a class="brand" href="calendar.html"><i></i>Ndure</a>
+        <nav><a class="on" href="calendar.html">Calendar</a><a href="garmin.html">Garmin</a></nav>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="who" id="who"></span>
+        <button class="inline ghost" id="logout" title="Sign out">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout" id="app" hidden>
+    <!-- LEFT -->
+    <section>
+      <div class="panel">
+        <div class="ph">
+          <h2 id="mini-title"></h2>
+          <div style="display:flex;gap:4px">
+            <button class="inline nav-btn" id="prev" aria-label="Previous month">←</button>
+            <button class="inline nav-btn" id="next" aria-label="Next month">→</button>
+          </div>
+        </div>
+        <div class="mini" id="mini"></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><h2 id="tot-title">This week</h2></div>
+        <div class="tot" id="tot"></div>
+        <div class="fam-bars" id="fam"></div>
+      </div>
+    </section>
+
+    <!-- MIDDLE -->
+    <section class="panel mid">
+      <div class="toolbar">
+        <h2 id="month-title"></h2>
+        <div class="acts">
+          <button class="inline" id="today">Today</button>
+          <button class="inline" id="sync">Sync Garmin</button>
+          <button class="inline primary" id="import">Import diary</button>
+          <input type="file" id="file" accept=".json,application/json,application/pdf,image/png,image/jpeg,image/webp" hidden>
+        </div>
+      </div>
+      <div class="tl" id="tl"></div>
+    </section>
+
+    <!-- RIGHT -->
+    <section class="panel detail" id="detail"></section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script>
+    const sb = supabase.createClient(NDURE.url, NDURE.key);
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const parse = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+    const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    const monday = (d) => addDays(d, -((d.getDay() + 6) % 7));
+    const hm = (s) => { if (!s) return ""; s = Math.round(s / 60); return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : `${s} min`; };
+    const km = (m) => (m ? (m / 1000).toFixed(m >= 10000 ? 1 : 2).replace(/\.?0+$/, "") + " km" : "");
+    const FAM = { run: "Run", bike: "Bike", swim: "Swim", ski: "Ski", strength: "Strength", walk: "Walk", other: "Other" };
+    const famColor = (f) => `var(--${FAM[f] ? f : "other"})`;
+    const feelColor = (n) => `var(--f${n})`;
+
+    let today = new Date(); today.setHours(0, 0, 0, 0);
+    let view = new Date(today.getFullYear(), today.getMonth(), 1); // month shown
+    let sel = new Date(today);
+    let data = { days: {}, sessions: [], acts: [] };
+
+    function toast(t, err) {
+      const el = $("toast"); el.textContent = t; el.className = "toast on" + (err ? " err" : "");
+      clearTimeout(toast.t); toast.t = setTimeout(() => (el.className = "toast"), err ? 6000 : 3500);
+    }
+
+    // ---------- data ----------
+    async function load() {
+      const from = ymd(monday(view)), to = ymd(addDays(monday(new Date(view.getFullYear(), view.getMonth() + 1, 0)), 6));
+      const [d, s, a] = await Promise.all([
+        sb.from("days").select("*").gte("date", from).lte("date", to),
+        sb.from("diary_sessions").select("*").gte("date", from).lte("date", to).order("ord"),
+        sb.from("garmin_activities").select("activity_id,date,start_local,name,sport_key,family,duration_s,distance_m,avg_hr,max_hr,elev_m,load,aerobic_te").gte("date", from).lte("date", to).order("start_local"),
+      ]);
+      if (d.error || s.error || a.error) toast((d.error || s.error || a.error).message, true);
+      data = { days: Object.fromEntries((d.data ?? []).map((r) => [r.date, r])), sessions: s.data ?? [], acts: a.data ?? [] };
+      render();
+    }
+
+    const dayData = (key) => {
+      const ss = data.sessions.filter((s) => s.date === key);
+      const aa = data.acts.filter((a) => a.date === key);
+      const linkedIds = new Set(ss.filter((s) => s.activity_id).map((s) => String(s.activity_id)));
+      return { d: data.days[key], ss, aa, garminOnly: aa.filter((a) => !linkedIds.has(String(a.activity_id))) };
+    };
+    const actById = (id) => data.acts.find((a) => String(a.activity_id) === String(id));
+
+    // ---------- render ----------
+    function render() { renderMini(); renderTotals(); renderTimeline(); renderDetail(); }
+
+    function renderMini() {
+      $("mini-title").textContent = view.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+      const start = monday(view);
+      let h = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => `<div class="dow">${d}</div>`).join("");
+      for (let i = 0; i < 42; i++) {
+        const d = addDays(start, i), k = ymd(d), { d: day, ss, aa } = dayData(k);
+        if (i >= 35 && d.getMonth() !== view.getMonth()) break;
+        const fams = [...new Set([...ss.map((s) => s.family || actById(s.activity_id)?.family), ...aa.map((a) => a.family)].filter(Boolean))].slice(0, 3);
+        const cls = [d.getMonth() !== view.getMonth() && "out", +d === +today && "today", +d === +sel && "sel"].filter(Boolean).join(" ");
+        h += `<button class="${cls}" data-k="${k}">${d.getDate()}<span class="dots">${day?.feel ? `<i style="background:${feelColor(day.feel)}"></i>` : ""}${fams.map((f) => `<i style="background:${famColor(f)}"></i>`).join("")}</span></button>`;
+      }
+      $("mini").innerHTML = h;
+      $("mini").querySelectorAll("button").forEach((b) => (b.onclick = () => select(parse(b.dataset.k))));
+    }
+
+    function renderTotals() {
+      const ws = monday(sel), we = addDays(ws, 6);
+      $("tot-title").textContent = +ws === +monday(today) ? "This week" : `Week of ${ws.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+      let secs = 0, meters = 0, n = 0, linked = 0, feelSum = 0, feelN = 0;
+      const fam = {};
+      for (let i = 0; i < 7; i++) {
+        const { d, ss, aa, garminOnly } = dayData(ymd(addDays(ws, i)));
+        if (d?.feel) { feelSum += d.feel; feelN++; }
+        const items = [...ss.map((s) => ({ s, a: actById(s.activity_id) })), ...garminOnly.map((a) => ({ a }))];
+        for (const { s, a } of items) {
+          const t = a?.duration_s ?? (s?.duration_min ? s.duration_min * 60 : 0);
+          const f = s?.family || a?.family || "other";
+          secs += t; meters += Number(a?.distance_m ?? (s?.distance_km ? s.distance_km * 1000 : 0)); n++;
+          if (s && a) linked++;
+          fam[f] = (fam[f] || 0) + t;
+        }
+      }
+      const diaryN = data.sessions.filter((s) => s.date >= ymd(ws) && s.date <= ymd(we)).length;
+      $("tot").innerHTML = `
+        <div><b>${hm(secs) || "0"}</b><span>Time</span></div>
+        <div><b>${(meters / 1000).toFixed(1)}</b><span>Km</span></div>
+        <div><b>${n}</b><span>Sessions</span></div>
+        <div><b>${feelN ? (feelSum / feelN).toFixed(1) : "–"}</b><span>Avg feel</span></div>`;
+      const max = Math.max(1, ...Object.values(fam));
+      $("fam").innerHTML = Object.entries(fam).sort((a, b) => b[1] - a[1]).map(([f, t]) =>
+        `<div class="fb"><span>${FAM[f] || f}</span><span class="bar"><i style="width:${(100 * t) / max}%;background:${famColor(f)}"></i></span><span class="num" style="text-align:right">${hm(t)}</span></div>`).join("")
+        + (diaryN ? `<div class="hint" style="margin:6px 0 0">${linked} of ${diaryN} diary sessions linked to Garmin</div>` : "");
+    }
+
+    function chipFor(s) {
+      const a = s.activity_id ? actById(s.activity_id) : null;
+      const f = s.family || a?.family || "other";
+      const v = a ? [hm(a.duration_s), km(a.distance_m)].filter(Boolean).join(" · ") : [s.duration_min ? hm(s.duration_min * 60) : "", s.distance_km ? km(s.distance_km * 1000) : ""].filter(Boolean).join(" · ");
+      return `<span class="chip ${a ? "" : "unlinked"}" title="${a ? "Linked to Garmin" : "Not linked to Garmin"}"><i class="dot" style="background:${famColor(f)}"></i><span class="lbl">${esc(s.sport_raw || FAM[f])}</span>${v ? `<span class="v">${v}</span>` : ""}${a ? '<span class="w">●</span>' : ""}</span>`;
+    }
+    const chipGarmin = (a) => `<span class="chip garmin" title="Garmin only"><i class="dot" style="background:${famColor(a.family)}"></i><span class="lbl">${esc(a.name || FAM[a.family] || a.sport_key)}</span><span class="v">${[hm(a.duration_s), km(a.distance_m)].filter(Boolean).join(" · ")}</span></span>`;
+
+    function renderTimeline() {
+      $("month-title").textContent = view.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+      const last = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+      let h = "";
+      for (let i = 1; i <= last; i++) {
+        const d = new Date(view.getFullYear(), view.getMonth(), i), k = ymd(d), { d: day, ss, garminOnly } = dayData(k);
+        const isSel = +d === +sel, isWe = d.getDay() === 0 || d.getDay() === 6;
+        h += `<div class="day ${isSel ? "sel" : isWe ? "we" : ""}" data-k="${k}" ${isSel ? 'id="sel-row"' : ""}>
+          <div class="dc"><small>${d.toLocaleDateString("en-GB", { weekday: "short" })}</small><b>${i}</b>${+d === +today ? "<em>today</em>" : ""}</div>
+          <div class="vl"></div>
+          <div class="body">
+            ${day?.feel ? `<span class="feel" style="background:${feelColor(day.feel)}" title="Feel ${day.feel}/5">${day.feel}</span>` : ""}
+            ${(day?.tags ?? []).map((t) => `<span class="tag">${esc(t)}</span>`).join("")}
+            ${ss.map(chipFor).join("")}${garminOnly.map(chipGarmin).join("")}
+            ${!ss.length && !garminOnly.length && day?.note ? `<span class="snip">${esc(day.note)}</span>` : ""}
+          </div>
+        </div>`;
+      }
+      $("tl").innerHTML = h;
+      $("tl").querySelectorAll(".day").forEach((r) => (r.onclick = () => select(parse(r.dataset.k), true)));
+    }
+
+    function renderDetail() {
+      const k = ymd(sel), { d, ss, aa, garminOnly } = dayData(k);
+      const stat = (v, l) => `<div><b>${v ?? "–"}</b><span>${l}</span></div>`;
+      const sleep = d?.sleep_s ? `${Math.floor(d.sleep_s / 3600)}:${String(Math.round((d.sleep_s % 3600) / 60)).padStart(2, "0")}` : null;
+      let h = `<div class="dh"><h2>${sel.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</h2>
+        ${d?.feel ? `<span class="feel" style="background:${feelColor(d.feel)}">${d.feel}</span>` : ""}</div>
+        ${(d?.tags ?? []).length ? `<div class="row" style="margin-top:8px;flex:none;gap:4px">${d.tags.map((t) => `<span class="tag" style="flex:none">${esc(t)}</span>`).join("")}</div>` : ""}
+        <div class="stats">${stat(d?.hrv ? d.hrv + " ms" : null, "HRV")}${stat(d?.rhr ? d.rhr + " bpm" : null, "Resting HR")}${stat(sleep, "Sleep")}</div>`;
+      h += `<div class="sec">Day</div>${d?.note ? `<div class="note">${esc(d.note)}</div>` : '<div class="empty">No day note.</div>'}`;
+      if (d?.unparsed) h += `<div class="sec">Unplaced text</div><div class="note">${esc(d.unparsed)}</div>`;
+      h += `<div class="sec">Training</div>`;
+      if (!ss.length && !aa.length) h += '<div class="empty">Nothing recorded.</div>';
+      for (const s of ss) {
+        const a = s.activity_id ? actById(s.activity_id) : null, f = s.family || a?.family || "other";
+        const kv = [
+          s.start_time && ["Start", s.start_time.slice(0, 5)], s.duration_min && ["Time", hm(s.duration_min * 60)],
+          s.distance_km && ["Dist", km(s.distance_km * 1000)], s.rpe && ["RPE", s.rpe],
+          s.pain != null && ["Pain", s.pain + (s.pain_where ? " · " + s.pain_where : "")],
+        ].filter(Boolean);
+        h += `<div class="sess">
+          <div class="st"><i class="dot" style="background:${famColor(f)}"></i>${esc(s.sport_raw || FAM[f])}</div>
+          ${kv.length ? `<div class="kv">${kv.map(([l, v]) => `<span>${l} <b>${esc(v)}</b></span>`).join("")}</div>` : ""}
+          ${s.structure ? `<div class="note" style="margin-top:6px"><b>${esc(s.structure)}</b></div>` : ""}
+          ${s.note ? `<div class="note" style="margin-top:6px">${esc(s.note)}</div>` : ""}
+          ${a ? `<div class="gm"><div class="gt"><span>⌚ ${esc(a.name || a.sport_key)}</span><span class="mono">${String(a.start_local).slice(11, 16)}</span></div>
+            <div class="kv">${[["Time", hm(a.duration_s)], a.distance_m && ["Dist", km(a.distance_m)], a.avg_hr && ["HR", a.avg_hr + " / " + (a.max_hr ?? "–")], a.load && ["Load", Math.round(a.load)], a.aerobic_te && ["TE", a.aerobic_te.toFixed(1)]].filter(Boolean).map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div></div>` : ""}
+          <select data-sid="${s.id}">
+            <option value="">${aa.length ? "Not linked" : "No Garmin activity this day"}</option>
+            ${aa.map((x) => `<option value="${x.activity_id}" ${String(x.activity_id) === String(s.activity_id) ? "selected" : ""}>${String(x.start_local).slice(11, 16)} · ${esc(x.name || x.sport_key)} · ${hm(x.duration_s)}</option>`).join("")}
+          </select>
+          <div class="hint" style="margin:4px 0 0;font-size:11px">${s.match_status === "manual" ? "Linked by you" : s.match_status === "auto" ? "Linked automatically" : ""}</div>
+        </div>`;
+      }
+      if (garminOnly.length) {
+        h += `<div class="sec">Garmin only</div>`;
+        for (const a of garminOnly) h += `<div class="sess" style="background:var(--panel-2);border-color:transparent">
+          <div class="st"><i class="dot" style="background:${famColor(a.family)}"></i>${esc(a.name || a.sport_key)}<span class="mono" style="margin-left:auto;font-weight:500;color:var(--mute)">${String(a.start_local).slice(11, 16)}</span></div>
+          <div class="kv">${[["Time", hm(a.duration_s)], a.distance_m && ["Dist", km(a.distance_m)], a.avg_hr && ["HR", a.avg_hr], a.load && ["Load", Math.round(a.load)]].filter(Boolean).map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div></div>`;
+      }
+      $("detail").innerHTML = h;
+      $("detail").querySelectorAll("select[data-sid]").forEach((el) => (el.onchange = () => relink(el.dataset.sid, el.value)));
+    }
+
+    function select(d, keepScroll) {
+      const monthChanged = d.getMonth() !== view.getMonth() || d.getFullYear() !== view.getFullYear();
+      sel = d;
+      if (monthChanged) { view = new Date(d.getFullYear(), d.getMonth(), 1); load().then(scrollToSel); }
+      else { render(); if (!keepScroll) scrollToSel(); }
+    }
+    function scrollToSel() { $("sel-row")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
+
+    // ---------- actions ----------
+    async function relink(sid, activityId) {
+      const { error } = await sb.from("diary_sessions").update({
+        activity_id: activityId ? Number(activityId) : null, match_status: activityId ? "manual" : "none", match_score: null,
+      }).eq("id", sid);
+      if (error) return toast(error.message, true);
+      const s = data.sessions.find((x) => x.id === sid);
+      if (s) { s.activity_id = activityId ? Number(activityId) : null; s.match_status = activityId ? "manual" : "none"; }
+      render(); toast(activityId ? "Linked" : "Unlinked");
+    }
+
+    async function invoke(fn, body) {
+      const { data: res, error } = await sb.functions.invoke(fn, { body });
+      if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || JSON.stringify(j); } catch {} throw new Error(m); }
+      return res;
+    }
+
+    $("sync").onclick = async () => {
+      const from = new Date(view), to = new Date(view.getFullYear(), view.getMonth() + 1, 0);
+      const end = to > today ? today : to;
+      if (from > today) return toast("Nothing to sync in the future");
+      $("sync").classList.add("busy"); $("sync").textContent = "Syncing…";
+      try {
+        const r = await invoke("garmin", { action: "sync", from: ymd(from), to: ymd(end) });
+        toast(`${r.activities} activities · ${r.health_days} days of HRV/sleep · ${r.linked} linked`);
+        await load();
+      } catch (e) { toast(e.message, true); }
+      $("sync").classList.remove("busy"); $("sync").textContent = "Sync Garmin";
+    };
+
+    $("import").onclick = () => $("file").click();
+    $("file").onchange = async () => {
+      const f = $("file").files[0]; $("file").value = "";
+      if (!f) return;
+      $("import").classList.add("busy"); $("import").textContent = f.type.includes("json") || f.name.endsWith(".json") ? "Importing…" : "Reading scan…";
+      try {
+        let body;
+        if (f.type.includes("json") || f.name.endsWith(".json")) body = { diary: JSON.parse(await f.text()) };
+        else if (f.type === "application/pdf") body = { file: await b64(f), media_type: "application/pdf" };
+        else body = { file: await shrink(f), media_type: "image/jpeg" };
+        const r = await invoke("diary", body);
+        toast(`${r.days} days · ${r.sessions} sessions · ${r.linked} linked to Garmin`);
+        if (r.from) { const d = parse(r.from); sel = d; view = new Date(d.getFullYear(), d.getMonth(), 1); }
+        await load(); scrollToSel();
+      } catch (e) { toast(e.message, true); }
+      $("import").classList.remove("busy"); $("import").textContent = "Import diary";
+    };
+    const b64 = (f) => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = no; r.readAsDataURL(f); });
+    async function shrink(f) { // photos → JPEG, max 2400 px on the long edge
+      const img = await createImageBitmap(f);
+      const s = Math.min(1, 2400 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return c.toDataURL("image/jpeg", 0.88).split(",")[1];
+    }
+
+    $("prev").onclick = () => { view = new Date(view.getFullYear(), view.getMonth() - 1, 1); sel = new Date(view); load(); };
+    $("next").onclick = () => { view = new Date(view.getFullYear(), view.getMonth() + 1, 1); sel = new Date(view); load(); };
+    $("today").onclick = () => select(new Date(today));
+    $("logout").onclick = () => sb.auth.signOut();
+    document.addEventListener("keydown", (e) => {
+      if (e.target.closest("input,select,textarea")) return;
+      if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); select(addDays(sel, 1)); }
+      if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); select(addDays(sel, -1)); }
+      if (e.key === "t") select(new Date(today));
+    });
+
+    (async () => {
+      const { data: s } = await sb.auth.getSession();
+      if (!s.session) return location.replace("index.html");
+      $("who").textContent = s.session.user.email;
+      $("app").hidden = false;
+      await load(); scrollToSel();
+    })();
+    sb.auth.onAuthStateChange((e) => { if (e === "SIGNED_OUT") location.replace("index.html"); });
+  </script>
+</body>
+</html>

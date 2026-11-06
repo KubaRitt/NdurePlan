@@ -44,8 +44,8 @@
     let mode = "in";
 
     // Already signed in (or just back from Google / email confirm) → go to the app
-    sb.auth.getSession().then(({ data }) => { if (data.session) location.replace("garmin.html"); });
-    sb.auth.onAuthStateChange((_e, s) => { if (s) location.replace("garmin.html"); });
+    sb.auth.getSession().then(({ data }) => { if (data.session) location.replace("calendar.html"); });
+    sb.auth.onAuthStateChange((_e, s) => { if (s) location.replace("calendar.html"); });
 
     function setMode(m) {
       mode = m;
@@ -63,7 +63,7 @@
     $("google").onclick = async () => {
       const { error } = await sb.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: new URL("garmin.html", location.href).href },
+        options: { redirectTo: new URL("calendar.html", location.href).href },
       });
       if (error) msg(error.message, "err");
     };
@@ -74,7 +74,7 @@
       $("submit").disabled = true; msg("…");
       const res = mode === "in"
         ? await sb.auth.signInWithPassword({ email, password })
-        : await sb.auth.signUp({ email, password, options: { emailRedirectTo: new URL("garmin.html", location.href).href } });
+        : await sb.auth.signUp({ email, password, options: { emailRedirectTo: new URL("calendar.html", location.href).href } });
       $("submit").disabled = false;
       if (res.error) return msg(res.error.message, "err");
       if (mode === "up" && !res.data.session) msg("Check your inbox to confirm your email.", "ok");

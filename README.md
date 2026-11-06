@@ -2,11 +2,14 @@
 
 ```
 index.html    sign in / create account / Google
+calendar.html calendar: diary + Garmin, day detail, import, sync, relink
 garmin.html   Garmin Personal API test page (signed-in only)
 config.js     Supabase URL + publishable key (safe to ship)
 style.css
 vercel.json   static hosting headers
-supabase/functions/garmin/index.ts   edge function (deployed)
+supabase/functions/garmin/index.ts   Garmin: key, token, test GET, sync (deployed)
+supabase/functions/diary/index.ts    diary import: JSON or scanned template (deployed)
+supabase/functions/_shared/match.ts  sport families + session ↔ activity matching
 templates/
   ndure-training-day.pdf    1 day, A4 portrait
   ndure-training-week.pdf   7 days, A4 landscape
@@ -57,3 +60,13 @@ Then add the Vercel URL in Supabase → Authentication → URL Configuration
 1. Garmin Connect Web → Personal API → Create key, paste it on the page and save.
 2. **Get token** checks the key and that Supabase's servers can reach Garmin.
 3. **Send GET** calls any `https://*.garmin.com` URL from the Personal API reference with the token attached.
+
+## Calendar
+
+- **Sync Garmin** pulls the visible month: activities, HRV, resting HR and sleep.
+- **Import diary** takes the JSON from `templates/diary-to-json-prompt.md`, or a PDF / photo of a filled
+  template. Scans are read with Claude and need an `ANTHROPIC_API_KEY` edge function secret
+  (Supabase → Edge Functions → Secrets).
+- Each diary session is linked to the best Garmin activity that day (same sport family, then start time,
+  duration, distance, then written order). Change a link in the day panel; your manual links are kept on re-sync.
+- Tables: `days`, `diary_sessions`, `garmin_activities` (row-level security: your rows only).

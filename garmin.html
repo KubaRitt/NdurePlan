@@ -7,14 +7,19 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="wrap wide" id="app" hidden>
-    <div class="top">
-      <div class="brand"><i></i>Ndure</div>
-      <div class="row" style="flex:0 0 auto;align-items:center">
-        <span class="pill" id="who"></span>
-        <button class="inline" id="logout">Sign out</button>
+  <header class="appbar">
+    <div class="in">
+      <div style="display:flex;align-items:center">
+        <a class="brand" href="calendar.html"><i></i>Ndure</a>
+        <nav><a href="calendar.html">Calendar</a><a class="on" href="garmin.html">Garmin</a></nav>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="who" id="who"></span>
+        <button class="inline ghost" id="logout">Sign out</button>
       </div>
     </div>
+  </header>
+  <main class="wrap wide" id="app" hidden style="padding-top:8px">
     <h1>Garmin API test</h1>
     <p class="sub">Your key is stored on the server and never sent back to the browser.</p>
 
