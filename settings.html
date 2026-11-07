@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ndure · Settings</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .page { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
+    .page h1 { margin: 0 0 4px; font-size: 22px; }
+    .card + .card { margin-top: 16px; }
+    .card h2 { font-size: 15px; margin: 0 0 2px; }
+    .tbl-wrap { overflow-x: auto; margin: 12px -4px 0; padding: 0 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
+    th { text-align: left; font-size: 11px; font-weight: 700; color: var(--mute); text-transform: uppercase; letter-spacing: .04em; padding: 0 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+    td { padding: 8px 6px; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
+    tr:last-child td { border-bottom: 0; }
+    td.sport { font-weight: 650; white-space: nowrap; }
+    td input { width: 76px; padding: 7px 8px; text-align: center; font-variant-numeric: tabular-nums; }
+    td input.wide { width: 92px; }
+    td .unit { font-size: 11px; color: var(--mute); margin-left: 4px; }
+    td.rng { font-size: 11px; color: var(--mute); font-variant-numeric: tabular-nums; }
+    td input.bad { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(220,38,38,.08); }
+    .save-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+    .save-row .msg { margin: 0; }
+    .key-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .key-row input { flex: 1 1 240px; }
+    .zone-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .zone-chips span { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; color: #18181b; }
+    .help { color: var(--mute); font-size: 13px; margin: 6px 0 0; max-width: 680px; }
+  </style>
+</head>
+<body>
+  <header class="appbar">
+    <div class="in">
+      <div style="display:flex;align-items:center">
+        <a class="brand" href="calendar.html"><i></i>Ndure</a>
+        <nav><a href="calendar.html">Calendar</a><a href="dashboard.html">Dashboard</a><a class="on" href="settings.html">Settings</a></nav>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="who" id="who"></span>
+        <button class="inline ghost" id="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page" id="app" hidden>
+    <h1>Settings</h1>
+    <p class="sub" style="margin-bottom:20px">Garmin connection and your training zones.</p>
+
+    <!-- GARMIN -->
+    <section class="card">
+      <div class="top"><h2>Garmin</h2><span class="pill" id="key-status">checking…</span></div>
+      <p class="help">Garmin Connect (web) → Settings → Personal API → create a key and paste it here once. It's stored on the server and never sent back to the browser.</p>
+      <div class="key-row">
+        <input id="key" type="password" placeholder="Paste Garmin Personal API key" autocomplete="off" aria-label="Garmin Personal API key">
+        <button class="primary inline" id="save-key">Save key</button>
+        <button class="inline" id="check">Check connection</button>
+        <button class="inline" id="del-key">Remove</button>
+      </div>
+      <div class="msg" id="key-msg"></div>
+    </section>
+
+    <!-- ZONES -->
+    <section class="card">
+      <h2>Heart-rate zones</h2>
+      <p class="help">Upper limit of each zone in bpm, per sport. Laps are coloured by their average heart rate. Walking, strength and anything else use <b>Other</b>.</p>
+      <div class="zone-chips">
+        <span style="background:var(--z-easy)">Easy</span><span style="background:var(--z-ap1)">AP1</span>
+        <span style="background:var(--z-ap2)">AP2</span><span style="background:var(--z-ap3)">AP3</span>
+        <span style="background:var(--z-nm)">Neuromuscular</span><span style="background:var(--z-rest)">Rest</span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Sport</th>
+            <th><i class="sw" style="background:var(--z-easy)"></i>Easy ≤</th>
+            <th><i class="sw" style="background:var(--z-ap1)"></i>AP1 ≤</th>
+            <th><i class="sw" style="background:var(--z-ap2)"></i>AP2 ≤</th>
+            <th><i class="sw" style="background:var(--z-ap3)"></i>AP3 ≤ (max)</th>
+            <th>Ranges</th>
+          </tr></thead>
+          <tbody id="zones"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- NEUROMUSCULAR -->
+    <section class="card">
+      <h2><i class="sw" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--z-nm);margin-right:8px"></i>Neuromuscular</h2>
+      <p class="help">Short fast reps (sprints, strides, hill sprints) where heart rate can't keep up. A rep counts as neuromuscular when it's no longer than the rep length <b>and</b> faster than the minimum speed. Leave the speed empty to use "clearly faster than the rest of the session".</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Sport</th><th>Rep up to</th><th>Faster than (optional)</th></tr></thead>
+          <tbody id="nm"></tbody>
+        </table>
+      </div>
+      <div class="save-row">
+        <span class="msg" id="save-msg"></span>
+        <button class="primary inline" id="save">Save zones</button>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="laps.js"></script>
+  <script>
+    const sb = supabase.createClient(NDURE.url, NDURE.key);
+    const $ = (id) => document.getElementById(id);
+    const L = window.NdureLaps;
+    const SPORTS = L.ZONE_SPORTS;
+    const PACE = new Set(["run"]); // run: min speed entered as pace; others as km/h
+    let me = null, zones = {};
+
+    const msg = (id, t, cls = "") => { $(id).textContent = t; $(id).className = "msg " + cls; };
+    async function call(action, extra = {}) {
+      const { data, error } = await sb.functions.invoke("garmin", { body: { action, ...extra } });
+      if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || j.body || JSON.stringify(j); } catch {} return { error: m }; }
+      return data;
+    }
+
+    // ---------- Garmin ----------
+    async function refreshKey() {
+      const s = await call("status"), el = $("key-status");
+      if (s.error) { el.textContent = "error"; el.className = "pill"; return; }
+      el.textContent = s.has_key ? (s.token_valid_until ? "connected" : "key saved") : "no key";
+      el.className = "pill" + (s.has_key ? " ok" : "");
+    }
+    $("save-key").onclick = async () => {
+      const key = $("key").value.trim();
+      if (!key) return msg("key-msg", "Paste a key first.", "err");
+      $("save-key").disabled = true;
+      const r = await call("save_key", { key });
+      $("save-key").disabled = false;
+      if (r.error) return msg("key-msg", r.error, "err");
+      $("key").value = "";
+      const t = await call("token");
+      msg("key-msg", t.ok ? "Key saved and Garmin answered." : "Key saved, but Garmin refused it: " + (t.error || t.body || t.status), t.ok ? "ok" : "err");
+      refreshKey();
+    };
+    $("check").onclick = async () => {
+      $("check").disabled = true; msg("key-msg", "Checking…");
+      const t = await call("token");
+      $("check").disabled = false;
+      msg("key-msg", t.ok ? `Connected. Token valid until ${new Date(t.expires_at).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}.` : "Garmin didn't accept the key: " + (t.error || t.body || t.status), t.ok ? "ok" : "err");
+      refreshKey();
+    };
+    $("del-key").onclick = async () => {
+      if (!confirm("Remove the saved Garmin key? Synced data stays.")) return;
+      await call("delete_key"); msg("key-msg", "Key removed."); refreshKey();
+    };
+
+    // ---------- zones ----------
+    const paceToMs = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s).trim()); return m ? 1000 / (Number(m[1]) * 60 + Number(m[2])) : null; };
+    const msToPace = (v) => { if (!v) return ""; const s = Math.round(1000 / v); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+    const kmhToMs = (s) => { const n = Number(String(s).replace(",", ".")); return s !== "" && n > 0 ? n / 3.6 : null; };
+
+    function render() {
+      $("zones").innerHTML = SPORTS.map(([k, label]) => {
+        const z = zones[k] || {};
+        return `<tr data-k="${k}"><td class="sport">${label}</td>
+          ${L.ZONES.map((zz) => `<td><input type="number" inputmode="numeric" min="40" max="240" data-z="${zz}" value="${z[zz] ?? ""}" aria-label="${label} ${L.SHORT[zz]} upper limit"></td>`).join("")}
+          <td class="rng" data-rng></td></tr>`;
+      }).join("");
+      $("nm").innerHTML = SPORTS.map(([k, label]) => {
+        const z = zones[k] || {}, pace = PACE.has(k);
+        const sp = z.nm_min_speed ? (pace ? msToPace(z.nm_min_speed) : (z.nm_min_speed * 3.6).toFixed(1)) : "";
+        return `<tr data-k="${k}"><td class="sport">${label}</td>
+          <td><input type="number" min="5" max="120" data-nm="max" value="${z.nm_max_s ?? L.DEFAULT_NM.nm_max_s}" aria-label="${label} neuromuscular rep length"><span class="unit">s</span></td>
+          <td><input class="wide" data-nm="speed" value="${sp}" placeholder="${pace ? "auto, or 3:20" : "auto"}" aria-label="${label} neuromuscular minimum ${pace ? "pace" : "speed"}"><span class="unit">${pace ? "/km" : "km/h"}</span></td></tr>`;
+      }).join("");
+      document.querySelectorAll("#zones input").forEach((i) => (i.oninput = ranges));
+      ranges();
+    }
+
+    function ranges() {
+      document.querySelectorAll("#zones tr").forEach((tr) => {
+        const v = L.ZONES.map((z) => tr.querySelector(`[data-z=${z}]`)).map((i) => (i.value === "" ? null : Number(i.value)));
+        let ok = true;
+        tr.querySelectorAll("input").forEach((i, j) => {
+          const bad = v[j] != null && ((j > 0 && v[j - 1] != null && v[j] <= v[j - 1]) || (v[j - 1] == null && j > 0));
+          i.classList.toggle("bad", bad); if (bad) ok = false;
+        });
+        const cell = tr.querySelector("[data-rng]");
+        if (v[0] == null) { cell.textContent = "not set"; return; }
+        const parts = [`Easy ≤${v[0]}`];
+        for (let j = 1; j < 4; j++) if (v[j] != null) parts.push(`${L.SHORT[L.ZONES[j]]} ${v[j - 1] + 1}–${v[j]}`);
+        cell.textContent = ok ? parts.join(" · ") : "each limit must be higher than the one before";
+      });
+    }
+
+    function collect() {
+      const out = {}; let bad = false;
+      document.querySelectorAll("#zones tr").forEach((tr) => {
+        const k = tr.dataset.k, z = {};
+        L.ZONES.forEach((zz) => { const i = tr.querySelector(`[data-z=${zz}]`); if (i.value !== "") z[zz] = Math.round(Number(i.value)); if (i.classList.contains("bad")) bad = true; });
+        out[k] = z;
+      });
+      document.querySelectorAll("#nm tr").forEach((tr) => {
+        const k = tr.dataset.k, maxEl = tr.querySelector("[data-nm=max]"), spEl = tr.querySelector("[data-nm=speed]");
+        const max = Math.round(Number(maxEl.value)); out[k].nm_max_s = max >= 5 && max <= 120 ? max : L.DEFAULT_NM.nm_max_s;
+        const sp = spEl.value.trim();
+        const ms = sp === "" ? null : PACE.has(k) ? paceToMs(sp) : kmhToMs(sp);
+        spEl.classList.toggle("bad", sp !== "" && !ms); if (sp !== "" && !ms) bad = true;
+        out[k].nm_min_speed = ms ? Math.round(ms * 1000) / 1000 : null;
+      });
+      return bad ? null : out;
+    }
+
+    $("save").onclick = async () => {
+      const z = collect();
+      if (!z) return msg("save-msg", "Fix the fields marked red first.", "err");
+      $("save").disabled = true;
+      const { error } = await sb.from("user_settings").upsert({ user_id: me.id, zones: z, updated_at: new Date().toISOString() });
+      $("save").disabled = false;
+      if (error) return msg("save-msg", error.message, "err");
+      zones = z; msg("save-msg", "Saved. Laps use the new zones next time you open an activity.", "ok");
+    };
+
+    $("logout").onclick = () => sb.auth.signOut();
+    (async () => {
+      const { data } = await sb.auth.getSession();
+      if (!data.session) return location.replace("index.html");
+      me = data.session.user;
+      $("who").textContent = me.email;
+      $("app").hidden = false;
+      const { data: row } = await sb.from("user_settings").select("zones").maybeSingle();
+      zones = row?.zones || {};
+      render(); refreshKey();
+    })();
+    sb.auth.onAuthStateChange((e) => { if (e === "SIGNED_OUT") location.replace("index.html"); });
+  </script>
+</body>
+</html>

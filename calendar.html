@@ -94,6 +94,8 @@
     .sess .gm .gt { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; color: var(--text-2); }
     .sess select { margin-top: 8px; font-size: 12px; padding: 6px 8px; }
     .empty { color: var(--faint); font-size: 13px; padding: 10px 0; }
+    .laps-link { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 650; color: var(--text); text-decoration: none; }
+    .laps-link:hover { text-decoration: underline; }
 
     .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--text); color: #fff; font-size: 13px; font-weight: 550; padding: 10px 16px; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.15); transition: transform .4s var(--spring), opacity .2s; z-index: 60; max-width: calc(100vw - 32px); }
     .toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
@@ -112,7 +114,7 @@
     <div class="in">
       <div style="display:flex;align-items:center">
         <a class="brand" href="calendar.html"><i></i>Ndure</a>
-        <nav><a class="on" href="calendar.html">Calendar</a><a href="dashboard.html">Dashboard</a><a href="garmin.html">Garmin</a></nav>
+        <nav><a class="on" href="calendar.html">Calendar</a><a href="dashboard.html">Dashboard</a><a href="settings.html">Settings</a></nav>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
         <span class="who" id="who"></span>
@@ -198,6 +200,10 @@
     let today = new Date(); today.setHours(0, 0, 0, 0);
     let view = new Date(today.getFullYear(), today.getMonth(), 1); // month shown
     let sel = new Date(today);
+    { // calendar.html?d=YYYY-MM-DD opens that day (used by the activity page's back link)
+      const q = new URLSearchParams(location.search).get("d");
+      if (/^\d{4}-\d{2}-\d{2}$/.test(q || "")) { const [y, m, d] = q.split("-").map(Number); sel = new Date(y, m - 1, d); view = new Date(y, m - 1, 1); }
+    }
     let data = { days: {}, sessions: [], acts: [] };
 
     function toast(t, err) {
@@ -328,7 +334,8 @@
           ${s.structure ? `<div class="note" style="margin-top:6px"><b>${esc(s.structure)}</b></div>` : ""}
           ${s.note ? `<div class="note" style="margin-top:6px">${esc(s.note)}</div>` : ""}
           ${a ? `<div class="gm"><div class="gt"><span>⌚ ${esc(a.name || a.sport_key)}</span><span class="mono">${String(a.start_local).slice(11, 16)}</span></div>
-            <div class="kv">${[["Time", hm(a.duration_s)], a.distance_m && ["Dist", km(a.distance_m)], a.avg_hr && ["HR", a.avg_hr + " / " + (a.max_hr ?? "–")], a.load && ["Load", Math.round(a.load)], a.aerobic_te && ["TE", a.aerobic_te.toFixed(1)]].filter(Boolean).map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div></div>` : ""}
+            <div class="kv">${[["Time", hm(a.duration_s)], a.distance_m && ["Dist", km(a.distance_m)], a.avg_hr && ["HR", a.avg_hr + " / " + (a.max_hr ?? "–")]].filter(Boolean).map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div>
+            <a class="laps-link" href="activity.html?id=${a.activity_id}">Laps and zones →</a></div>` : ""}
           <select data-sid="${s.id}">
             <option value="">${aa.length ? "Not linked" : "No Garmin activity this day"}</option>
             ${aa.map((x) => `<option value="${x.activity_id}" ${String(x.activity_id) === String(s.activity_id) ? "selected" : ""}>${String(x.start_local).slice(11, 16)} · ${esc(x.name || x.sport_key)} · ${hm(x.duration_s)}</option>`).join("")}
@@ -340,7 +347,8 @@
         h += `<div class="sec">Garmin only</div>`;
         for (const a of garminOnly) h += `<div class="sess" style="background:var(--panel-2);border-color:transparent">
           <div class="st"><i class="dot" style="background:${famColor(a.family)}"></i>${esc(a.name || a.sport_key)}<span class="mono" style="margin-left:auto;font-weight:500;color:var(--mute)">${String(a.start_local).slice(11, 16)}</span></div>
-          <div class="kv">${[["Time", hm(a.duration_s)], a.distance_m && ["Dist", km(a.distance_m)], a.avg_hr && ["HR", a.avg_hr], a.load && ["Load", Math.round(a.load)]].filter(Boolean).map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div></div>`;
+          <div class="kv">${[["Time", hm(a.duration_s)], a.distance_m && ["Dist", km(a.distance_m)], a.avg_hr && ["HR", a.avg_hr]].filter(Boolean).map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div>
+          <a class="laps-link" href="activity.html?id=${a.activity_id}">Laps and zones →</a></div>`;
       }
       $("detail").innerHTML = h;
       $("detail").querySelectorAll("select[data-sid]").forEach((el) => (el.onchange = () => relink(el.dataset.sid, el.value)));

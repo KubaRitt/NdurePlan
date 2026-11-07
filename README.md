@@ -5,7 +5,10 @@ index.html    sign in / create account / Google
 calendar.html calendar: diary + Garmin, day detail, import, sync, relink
 dashboard.html 7 / 14 / 28-day distance and time per sport
 prompt.js     the diary → JSON prompt shown in the app
-garmin.html   Garmin Personal API test page (signed-in only)
+settings.html Garmin key, heart-rate zones (Easy/AP1/AP2/AP3) per sport, neuromuscular rule
+activity.html one activity: lap chart coloured by zone, time in zone, lap list
+laps.js       lap engine: splits the Garmin track into laps and classifies them
+garmin.html   redirects to settings.html
 config.js     Supabase URL + publishable key (safe to ship)
 style.css
 vercel.json   static hosting headers
@@ -78,3 +81,16 @@ Then add the Vercel URL in Supabase → Authentication → URL Configuration
 Rolling 7, 14 and 28 days ending today: distance (time for sports without distance) per sport, totals,
 km per week, and the last four 7-day blocks. Counts Garmin activities plus diary sessions that aren't
 linked to one, so nothing is counted twice. **Sync last 28 days** refreshes Garmin first.
+
+## Laps and zones
+
+Garmin's personal API has no lap list, so `activity.html` asks the `garmin` function for the
+second-by-second track (`action: "streams"`, cached in `activity_streams`) and `laps.js` builds the laps:
+
+- **Efforts**: stretches clearly faster than the session's typical speed (power on a bike).
+- **Between efforts**: running / walking / standing are split apart; steady running becomes 1 km laps
+  (ski 2 km, bike 5 km, no distance: 5 min).
+- **Zone per lap**: average heart rate against your limits in Settings.
+- **Neuromuscular**: an effort no longer than the rep length (default 30 s) and faster than the optional
+  minimum speed. **Rest**: standing, or a walk of up to 3 min right after an effort.
+- **Time in zone**: heart rate per second, except neuromuscular reps count as NM.

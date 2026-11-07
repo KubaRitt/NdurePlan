@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ndure · Activity</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .page { max-width: 1180px; margin: 0 auto; padding: 20px 16px 64px; }
+    .back { font-size: 13px; color: var(--mute); text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
+    .back:hover { color: var(--text); }
+    .hd { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 10px 0 16px; }
+    .hd h1 { margin: 0; font-size: 22px; display: flex; align-items: center; gap: 10px; }
+    .hd h1 i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .hd p { margin: 2px 0 0; color: var(--mute); font-size: 13px; }
+    .stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+    @media (max-width: 760px) { .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .stats div { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+    .stats b { display: block; font-size: 18px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .stats span { font-size: 11px; color: var(--mute); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-top: 14px; animation: rise .45s var(--spring) both; }
+    .panel h2 { margin: 0 0 12px; font-size: 13px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .panel h2 small { font-weight: 500; color: var(--mute); font-size: 12px; }
+    .banner { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; margin-top: 14px; }
+    .banner a { color: #78350f; font-weight: 650; }
+
+    /* chart */
+    .chart { position: relative; user-select: none; }
+    .chart svg { display: block; width: 100%; height: 280px; }
+    @media (max-width: 640px) { .chart svg { height: 200px; } }
+    .chart .blk { transition: opacity .15s; }
+    .chart .blk.dim { opacity: .35; }
+    .chart .blk.hi { opacity: 1; }
+    .tip { position: absolute; top: 8px; pointer-events: none; background: var(--text); color: #fff; font-size: 12px; border-radius: 8px; padding: 8px 10px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,.18); opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .25s var(--spring); z-index: 5; font-variant-numeric: tabular-nums; }
+    .tip.on { opacity: 1; transform: none; }
+    .tip b { display: block; margin-bottom: 2px; }
+    .tip span { color: #a1a1aa; }
+    .axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--mute); margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin-top: 10px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 10px; height: 10px; border-radius: 2px; }
+    .legend .hrl { width: 14px; height: 2px; border-radius: 1px; background: #18181b; }
+
+    /* time in zone */
+    .tiz-bar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; gap: 2px; background: var(--panel-2); }
+    .tiz-bar i { display: block; height: 100%; transform-origin: left; animation: grow .7s var(--spring) both; }
+    @keyframes grow { from { transform: scaleX(0); } }
+    .tiz { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-top: 12px; }
+    .tiz div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .tiz i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+    .tiz b { font-variant-numeric: tabular-nums; }
+    .tiz small { color: var(--mute); font-variant-numeric: tabular-nums; }
+
+    .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+    @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+    .grid2 .panel { margin-top: 14px; }
+    .note { white-space: pre-wrap; font-size: 13px; color: var(--text-2); margin: 6px 0 0; }
+    .kv { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--mute); font-variant-numeric: tabular-nums; }
+    .kv b { color: var(--text-2); font-weight: 600; }
+    .steps { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text-2); display: grid; gap: 2px; }
+
+    /* laps table */
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 620px; }
+    th { text-align: right; font-size: 11px; font-weight: 700; color: var(--mute); text-transform: uppercase; letter-spacing: .04em; padding: 0 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    th:nth-child(-n+2), td:nth-child(-n+2) { text-align: left; }
+    td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+    tbody tr { cursor: default; transition: background .12s; }
+    tbody tr:hover, tbody tr.hi { background: var(--panel-2); }
+    .zp { display: inline-block; font-size: 11px; font-weight: 700; color: #18181b; border-radius: 4px; padding: 1px 7px; min-width: 44px; text-align: center; }
+    td.fast { font-weight: 700; }
+    .muted { color: var(--faint); }
+    .loading { color: var(--mute); font-size: 13px; padding: 40px 0; text-align: center; }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--text); color: #fff; font-size: 13px; font-weight: 550; padding: 10px 16px; border-radius: 10px; transition: transform .4s var(--spring), opacity .2s; z-index: 60; max-width: calc(100vw - 32px); }
+    .toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .toast.err { background: var(--danger); }
+  </style>
+</head>
+<body>
+  <header class="appbar">
+    <div class="in">
+      <div style="display:flex;align-items:center">
+        <a class="brand" href="calendar.html"><i></i>Ndure</a>
+        <nav><a href="calendar.html">Calendar</a><a href="dashboard.html">Dashboard</a><a href="settings.html">Settings</a></nav>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="who" id="who"></span>
+        <button class="inline ghost" id="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page" id="app" hidden>
+    <a class="back" id="back" href="calendar.html">← Calendar</a>
+    <div class="hd">
+      <div><h1 id="title"><i></i><span></span></h1><p id="when"></p></div>
+      <button class="inline" id="reload">Reload from Garmin</button>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div id="banner"></div>
+
+    <section class="panel">
+      <h2><span>Laps</span><small id="chart-sub"></small></h2>
+      <div class="chart" id="chart"><div class="loading">Loading the track from Garmin…</div></div>
+      <div class="axis" id="axis"></div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="panel"><h2><span>Time in zone</span><small id="tiz-sub"></small></h2><div id="tiz"></div></section>
+      <section class="panel" id="side"></section>
+    </div>
+
+    <section class="panel">
+      <h2><span>Lap list</span><small id="laps-sub"></small></h2>
+      <div class="tbl-wrap"><table id="laps"></table></div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="laps.js"></script>
+  <script>
+    const sb = supabase.createClient(NDURE.url, NDURE.key);
+    const $ = (id) => document.getElementById(id);
+    const L = window.NdureLaps;
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const id = new URLSearchParams(location.search).get("id");
+    const FAMC = (f) => `var(--${["run", "bike", "swim", "ski", "strength", "walk"].includes(f) ? f : "other"})`;
+    const ZC = (z) => `var(--z-${z})`;
+    const clock = (s) => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
+    const km = (m) => (m == null ? "–" : m >= 995 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m");
+    let act = null, session = null, data = null, result = null, family = "other";
+
+    const paceUnit = () => (family === "run" || family === "walk" ? "pace" : family === "swim" ? "swim" : "speed");
+    function fmtSpeed(v) {
+      if (!v || v < 0.3) return "–";
+      if (paceUnit() === "pace") return clock(1000 / v) + " /km";
+      if (paceUnit() === "swim") return clock(100 / v) + " /100m";
+      return (v * 3.6).toFixed(1) + " km/h";
+    }
+    function toast(t, err) {
+      const el = $("toast"); el.textContent = t; el.className = "toast on" + (err ? " err" : "");
+      clearTimeout(toast.t); toast.t = setTimeout(() => (el.className = "toast"), err ? 6000 : 3500);
+    }
+    async function invoke(body) {
+      const { data: r, error } = await sb.functions.invoke("garmin", { body });
+      if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch {} throw new Error(m); }
+      return r;
+    }
+
+    async function load(refresh) {
+      const [a, s, z] = await Promise.all([
+        sb.from("garmin_activities").select("activity_id,date,start_local,name,sport_key,family,duration_s,distance_m,avg_hr,max_hr,elev_m").eq("activity_id", id).maybeSingle(),
+        sb.from("diary_sessions").select("sport_raw,rpe,pain,pain_where,structure,note").eq("activity_id", id).maybeSingle(),
+        sb.from("user_settings").select("zones").maybeSingle(),
+      ]);
+      act = a.data; session = s.data;
+      if (!act) { $("chart").innerHTML = '<div class="loading">Activity not found. Sync Garmin from the calendar first.</div>'; return; }
+      family = act.family || "other";
+      header();
+      try {
+        data = await invoke({ action: "streams", activity_id: Number(id), refresh: !!refresh });
+      } catch (e) { $("chart").innerHTML = `<div class="loading">${esc(e.message)}</div>`; return; }
+      result = L.analyse(data.series, family, z.data?.zones || {});
+      if (!result) { $("chart").innerHTML = '<div class="loading">Garmin has no detailed track for this activity.</div>'; return; }
+      render();
+    }
+
+    function header() {
+      $("title").querySelector("i").style.background = FAMC(family);
+      $("title").querySelector("span").textContent = act.name || act.sport_key;
+      const d = new Date(act.start_local);
+      $("when").textContent = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + " · " + String(act.start_local).slice(11, 16) + " · " + (act.sport_key || "").replace(/_/g, " ");
+      $("back").href = "calendar.html?d=" + act.date;
+      $("back").textContent = "← " + d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      const avgSpeed = act.distance_m && act.duration_s ? act.distance_m / act.duration_s : null;
+      const st = [[clock(act.duration_s), "Time"], [km(act.distance_m), "Distance"], [fmtSpeed(avgSpeed), paceUnit() === "speed" ? "Avg speed" : "Avg pace"],
+        [act.avg_hr ? act.avg_hr + " bpm" : "–", "Avg HR"], [act.max_hr ? act.max_hr + " bpm" : "–", "Max HR"], [act.elev_m != null ? Math.round(act.elev_m) + " m" : "–", "Climb"]];
+      $("stats").innerHTML = st.map(([v, l]) => `<div><b>${v}</b><span>${l}</span></div>`).join("");
+    }
+
+    function render() {
+      const r = result, laps = r.laps, s = r.s;
+      const sportName = L.ZONE_SPORTS.find(([k]) => k === r.zoneKey)?.[1] || "Other";
+      $("banner").innerHTML = r.hasZones ? "" : `<div class="banner"><span>No ${sportName} heart-rate zones yet, so laps aren't coloured.</span><a href="settings.html">Set zones in Settings →</a></div>`;
+      $("chart-sub").textContent = `${laps.length} laps${r.counts.reps ? ` · ${r.counts.reps} neuromuscular reps` : ""} · bar height = ${r.hasSpeed ? "speed" : "heart rate"}`;
+
+      // ---- MyWhoosh-style block chart ----
+      const W = 1000, H = 280, T = laps[laps.length - 1].t1 - laps[0].t0, t0 = laps[0].t0;
+      const useSpeed = r.hasSpeed;
+      const metric = (l) => (useSpeed ? l.speed || 0 : l.hr || 0);
+      const vals = laps.map(metric).filter((x) => x > 0);
+      const hrs = (s.hr || []).filter((x) => x > 0);
+      const lo = useSpeed ? 0 : Math.min(...vals) - 8, hi = Math.max(...vals);
+      const hFrac = (l) => { const m = metric(l); return m <= 0 ? 0.06 : 0.1 + 0.9 * Math.max(0, (m - lo) / Math.max(1e-6, hi - lo)); };
+      const x = (t) => ((t - t0) / T) * W;
+      let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Laps coloured by zone, bar height shows ${useSpeed ? "speed" : "heart rate"}">`;
+      for (let g = 1; g <= 3; g++) svg += `<line x1="0" x2="${W}" y1="${(H * g) / 4}" y2="${(H * g) / 4}" stroke="#f1f1f3" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+      laps.forEach((l, k) => {
+        const bx = x(l.t0), bw = Math.max(1.2, x(l.t1) - bx - 0.8), bh = Math.max(4, hFrac(l) * (H - 6));
+        svg += `<rect class="blk" data-k="${k}" x="${bx.toFixed(2)}" y="${(H - bh).toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" rx="1.5" fill="${ZC(l.zone)}" style="animation:rise-y .6s var(--spring) both;animation-delay:${Math.min(k * 0.012, 0.5)}s;transform-origin:${bx}px ${H}px"/>`;
+      });
+      // heart-rate line on its own scale
+      if (hrs.length) {
+        const hmin = Math.min(...hrs) - 5, hmax = Math.max(...hrs) + 3;
+        const sm = L.smooth(s.hr, s.t, 5);
+        const step = Math.max(1, Math.floor(s.n / 700));
+        const pts = [];
+        for (let i = 0; i < s.n; i += step) if (sm[i] != null) pts.push(`${x(s.t[i]).toFixed(1)},${(H - 4 - ((sm[i] - hmin) / (hmax - hmin)) * (H - 20)).toFixed(1)}`);
+        svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="#18181b" stroke-opacity=".75" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+      }
+      svg += `</svg><div class="tip" id="tip"></div>`;
+      $("chart").innerHTML = svg;
+      $("chart").insertAdjacentHTML("afterbegin", "<style>@keyframes rise-y{from{transform:scaleY(0)}}</style>");
+      const ticks = 5;
+      $("axis").innerHTML = Array.from({ length: ticks + 1 }, (_, i) => `<span>${clock((T * i) / ticks)}</span>`).join("");
+      const present = L.ORDER.filter((z) => laps.some((l) => l.zone === z));
+      $("legend").innerHTML = present.map((z) => `<span><i style="background:${ZC(z)}"></i>${L.LABEL[z]}</span>`).join("") + (hrs.length ? '<span><i class="hrl"></i>Heart rate</span>' : "");
+
+      // hover
+      const svgEl = $("chart").querySelector("svg"), tip = $("tip");
+      const lapAt = (clientX) => {
+        const b = svgEl.getBoundingClientRect(), t = t0 + ((clientX - b.left) / b.width) * T;
+        return laps.findIndex((l) => t >= l.t0 && t < l.t1);
+      };
+      const highlight = (k) => {
+        svgEl.querySelectorAll(".blk").forEach((el) => { el.classList.toggle("dim", k >= 0 && +el.dataset.k !== k); el.classList.toggle("hi", +el.dataset.k === k); });
+        document.querySelectorAll("#laps tbody tr").forEach((tr) => tr.classList.toggle("hi", +tr.dataset.k === k));
+        if (k < 0) { tip.className = "tip"; return; }
+        const l = laps[k], b = svgEl.getBoundingClientRect(), cx = ((x(l.t0) + x(l.t1)) / 2 / W) * b.width;
+        tip.innerHTML = `<b>Lap ${l.n} · ${l.label}</b>${clock(l.dur)} · ${km(l.dist)}<br>${fmtSpeed(l.speed)}<br><span>HR</span> ${l.hr ?? "–"} <span>/ max</span> ${l.hrMax ?? "–"}${l.power ? ` <span>· W</span> ${l.power}` : ""}`;
+        tip.style.left = Math.min(Math.max(cx - 80, 0), b.width - 170) + "px";
+        tip.className = "tip on";
+      };
+      svgEl.onmousemove = (e) => highlight(lapAt(e.clientX));
+      svgEl.onmouseleave = () => highlight(-1);
+      svgEl.ontouchstart = svgEl.ontouchmove = (e) => { highlight(lapAt(e.touches[0].clientX)); };
+
+      // ---- time in zone ----
+      const total = Object.values(r.tiz).reduce((a, b) => a + b, 0) || 1;
+      const zs = L.ORDER.filter((z) => r.tiz[z] > 0.5);
+      $("tiz-sub").textContent = "heart rate per second · NM reps counted as NM";
+      $("tiz").innerHTML = `<div class="tiz-bar">${zs.map((z) => `<i style="width:${(100 * r.tiz[z]) / total}%;background:${ZC(z)}" title="${L.LABEL[z]}"></i>`).join("")}</div>
+        <div class="tiz">${zs.map((z) => `<div><i style="background:${ZC(z)}"></i><span>${L.LABEL[z]}</span><b>${clock(r.tiz[z])}</b><small>${Math.round((100 * r.tiz[z]) / total)}%</small></div>`).join("")}</div>`;
+
+      // ---- diary + workout ----
+      let side = "";
+      if (session) {
+        const kv = [session.rpe && ["RPE", session.rpe], session.pain != null && ["Pain", session.pain + (session.pain_where ? " · " + session.pain_where : "")]].filter(Boolean);
+        side += `<h2><span>Diary · ${esc(session.sport_raw || "session")}</span></h2>
+          ${kv.length ? `<div class="kv">${kv.map(([l, v]) => `<span>${l} <b>${esc(v)}</b></span>`).join("")}</div>` : ""}
+          ${session.structure ? `<p class="note"><b>${esc(session.structure)}</b></p>` : ""}
+          ${session.note ? `<p class="note">${esc(session.note)}</p>` : ""}`;
+      }
+      const w = data.workout;
+      if (w && w.steps?.length) {
+        side += `<h2 style="margin-top:${session ? 18 : 0}px"><span>Garmin workout · ${esc(w.name || "")}</span></h2><ol class="steps">${workoutSteps(w.steps).map((x) => `<li>${esc(x)}</li>`).join("")}</ol>`;
+      }
+      $("side").innerHTML = side || `<h2><span>Diary</span></h2><p class="note muted">No diary session linked to this activity.</p>`;
+
+      // ---- lap table ----
+      const pw = r.hasPower;
+      $("laps-sub").textContent = r.hasSpeed ? "pace from the speed sensor" : "";
+      $("laps").innerHTML = `<thead><tr><th>#</th><th>Zone</th><th>Start</th><th>Time</th><th>Distance</th><th>${paceUnit() === "speed" ? "Speed" : "Pace"}</th><th>Avg HR</th><th>Max HR</th>${pw ? "<th>Power</th>" : ""}</tr></thead>
+        <tbody>${laps.map((l, k) => `<tr data-k="${k}">
+          <td>${l.n}</td><td><span class="zp" style="background:${ZC(l.zone)}">${L.SHORT[l.zone]}</span></td>
+          <td>${clock(l.t0)}</td><td>${clock(l.dur)}</td><td>${km(l.dist)}</td>
+          <td class="${l.fast ? "fast" : ""}">${fmtSpeed(l.speed)}</td><td>${l.hr ?? "–"}</td><td>${l.hrMax ?? "–"}</td>${pw ? `<td>${l.power ?? "–"}</td>` : ""}</tr>`).join("")}</tbody>`;
+      document.querySelectorAll("#laps tbody tr").forEach((tr) => { tr.onmouseenter = () => highlight(+tr.dataset.k); tr.onmouseleave = () => highlight(-1); });
+    }
+
+    // Garmin workout steps → readable lines, repeats folded: "6 × (0:10 active, 0:25 recovery)"
+    function workoutSteps(steps) {
+      const txt = (st) => {
+        const len = st.type === "TIME" ? clock(st.value) : st.type === "DISTANCE" ? km(st.value) : st.type === "LAP_BUTTON" ? "lap button" : (st.type || "").toLowerCase();
+        return `${len} ${(st.intensity || "").toLowerCase().replace("_", " ")}${st.notes ? ` – ${st.notes.trim()}` : ""}`.trim();
+      };
+      const out = [];
+      const pos = {};
+      steps.forEach((st) => {
+        if (st.type === "REPEAT_UNTIL_STEPS_CMPLT") {
+          const from = pos[st.value] ?? out.length - 1;
+          const block = out.splice(from);
+          out.push(`${st.target} × (${block.join(", ")})`);
+        } else { pos[st.i] = out.length; out.push(txt(st)); }
+      });
+      return out;
+    }
+
+    $("reload").onclick = async () => { $("reload").disabled = true; $("chart").innerHTML = '<div class="loading">Reloading from Garmin…</div>'; await load(true); $("reload").disabled = false; toast("Reloaded"); };
+    $("logout").onclick = () => sb.auth.signOut();
+    (async () => {
+      const { data: s } = await sb.auth.getSession();
+      if (!s.session) return location.replace("index.html");
+      if (!id) return location.replace("calendar.html");
+      $("who").textContent = s.session.user.email;
+      $("app").hidden = false;
+      load();
+    })();
+    sb.auth.onAuthStateChange((e) => { if (e === "SIGNED_OUT") location.replace("index.html"); });
+  </script>
+</body>
+</html>
