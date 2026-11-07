@@ -60,6 +60,22 @@
     .lday i { flex: 1; display: block; border-radius: 2px 2px 0 0; transform-origin: bottom; animation: rise-y .6s var(--spring) both; min-height: 0; }
     .lday.wk::after { content: ""; position: absolute; left: -2px; top: 0; bottom: 0; width: 1px; background: var(--line); }
     @keyframes rise-y { from { transform: scaleY(0); } }
+    .rhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .rhead h2 { margin: 0; }
+    .seg { display: inline-flex; background: var(--panel-2); border-radius: 8px; padding: 2px; gap: 2px; }
+    .seg button { all: unset; cursor: pointer; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 6px; color: var(--mute); }
+    .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    .seg button:focus-visible { outline: 2px solid var(--text); }
+    .rnow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+    .rnow div { border-left: 3px solid; padding-left: 8px; }
+    .rnow b { display: block; font-size: 20px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .rnow span { font-size: 11px; color: var(--mute); }
+    .rchart { position: relative; height: 240px; }
+    .rchart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+    .rchart text { font-size: 10px; fill: var(--mute); font-variant-numeric: tabular-nums; }
+    .rtip { position: absolute; top: 0; pointer-events: none; background: var(--text); color: #fff; font-size: 11px; line-height: 1.5; padding: 6px 8px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; transform: translateX(-50%); opacity: 0; transition: opacity .12s; }
+    .rtip.on { opacity: 1; }
+    .rtip i { display: inline-block; width: 8px; height: 2px; vertical-align: middle; margin-right: 5px; }
     .empty { color: var(--mute); font-size: 13px; padding: 24px 0; text-align: center; }
     .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--text); color: #fff; font-size: 13px; font-weight: 550; padding: 10px 16px; border-radius: 10px; transition: transform .4s var(--spring), opacity .2s; z-index: 60; max-width: calc(100vw - 32px); }
     .toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
@@ -84,9 +100,20 @@
   <main class="page" id="app" hidden>
     <div class="head">
       <div><h1>Dashboard</h1><p id="range"></p></div>
-      <button class="inline" id="sync">Sync last 28 days</button>
+      <button class="inline" id="sync">Sync last 120 days</button>
     </div>
     <div class="kpis" id="kpis"></div>
+    <div class="panel" id="roll-panel">
+      <div class="rhead">
+        <h2>Progress · rolling sums <small id="roll-sub" style="font-weight:500;color:var(--mute);font-size:12px"></small></h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div class="seg" id="r-metric"><button data-v="hr" class="on">HR load</button><button data-v="body">Body load</button><button data-v="km">Running km</button></div>
+          <div class="seg" id="r-mode"><button data-v="sum" class="on">Sum</button><button data-v="week">Per week</button></div>
+        </div>
+      </div>
+      <div class="rnow" id="rnow"></div>
+      <div class="rchart" id="rchart"><div class="rtip" id="rtip"></div></div>
+    </div>
     <div class="panel" id="load-panel">
       <h2 style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>Load</span><small id="load-sub" style="font-weight:500;color:var(--mute);font-size:12px"></small></h2>
       <div class="lcards" id="lcards"></div>
@@ -121,6 +148,8 @@
     const color = (f) => `var(--${f})`;
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const WIN = [7, 14, 28];
+    const SHOW = 90; // days shown in the rolling graph
+    const RCOL = { 7: "#18181b", 14: "#3b82f6", 28: "#f59e0b" };
     let items = [];
 
     function toast(t, err) {
@@ -129,8 +158,8 @@
     }
 
     async function load() {
-      const first = addDays(monday(today), -21); // 4 Monday-weeks, and the 28-day window
-      const from = ymd(first < addDays(today, -27) ? first : addDays(today, -27)), to = ymd(today);
+      // 90 days of graph + 27 days before it for the first 28-day sum
+      const from = ymd(addDays(today, -(SHOW + 27))), to = ymd(today);
       $("range").textContent = `${addDays(today, -27).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${today.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · rolling windows ending today`;
       const [a, s] = await Promise.all([
         sb.from("garmin_activities").select("activity_id,date,family,sport_key,duration_s,distance_m").gte("date", from).lte("date", to),
@@ -151,44 +180,110 @@
     async function loadLoads(acts) {
       const sub = $("load-sub");
       try {
-        const zones = await M.settings();
-        const pace = zones.run && zones.run.pace;
-        const stale = !pace || !pace.fitted_at || (Date.now() - new Date(pace.fitted_at)) / 864e5 > 7;
-        if (!(zones.run && zones.run.pace_manual) && stale && zones.run && zones.run.easy) { sub.textContent = "Fitting your pace anchors…"; await M.refitPace(); }
         const since = ymd(addDays(today, -27));
         const recent = acts.filter((x) => x.date >= since);
-        const m = await M.ensure(recent, (i, n) => (sub.textContent = `Calculating load ${i}/${n}…`));
-        renderLoads(recent, m, await M.settings());
+        $("roll-sub").textContent = "· calculating…";
+        const m = await M.ensure(acts, (i, n) => (sub.textContent = `Calculating load ${i}/${n}…`));
+        renderLoads(recent, m);
+        buildDaily(acts, m); renderRoll();
       } catch (e) { sub.textContent = "Couldn't calculate load: " + e.message; }
     }
-    function renderLoads(acts, m, zones) {
+    function renderLoads(acts, m) {
       const days = [...Array(28)].map((_, i) => ymd(addDays(today, i - 27)));
       const per = Object.fromEntries(days.map((d) => [d, { hr: 0, body: 0 }]));
       let missing = 0;
       for (const a of acts) {
         const r = m[a.activity_id];
         if (!r || r.hr_load == null) { missing++; continue; }
-        per[a.date].hr += r.hr_load; per[a.date].body += r.body_load ?? r.hr_load;
+        per[a.date].hr += r.hr_load; per[a.date].body += Number(r.body_load) || 0;
       }
       const sum = (k, n) => days.slice(-n).reduce((x, d) => x + per[d][k], 0);
       const card = (k, label) => {
         const a7 = sum(k, 7), c28 = sum(k, 28) / 4, ratio = c28 ? a7 / c28 : null;
         const [txt, bg, fg] = ratio == null ? ["–", "var(--panel)", "var(--mute)"] : ratio < 0.8 ? ["low", "#e0f2fe", "#075985"] : ratio <= 1.3 ? ["steady", "#dcfce7", "#166534"] : ratio <= 1.5 ? ["rising", "#fef3c7", "#92400e"] : ["spike", "#fee2e2", "#991b1b"];
+        const f = (x) => (k === "body" ? x.toFixed(1) : Math.round(x));
         return `<div class="lcard"><div class="lt">${label}</div><div class="row3">
-          <div><b>${Math.round(a7)}</b><span>last 7 days</span></div>
-          <div><b>${Math.round(c28)}</b><span>28-day avg / week</span></div>
+          <div><b>${f(a7)}</b><span>last 7 days</span></div>
+          <div><b>${f(c28)}</b><span>28-day avg / week</span></div>
           <div><b>${ratio == null ? "–" : ratio.toFixed(2)}</b><span class="ratio" style="background:${bg};color:${fg}">${txt}</span></div></div></div>`;
       };
-      $("lcards").innerHTML = card("hr", "HR load") + card("body", "Body load");
-      const max = Math.max(1, ...days.map((d) => Math.max(per[d].hr, per[d].body)));
+      $("lcards").innerHTML = card("hr", "HR load · TRIMP") + card("body", "Body load · running-equivalent km");
+      const maxH = Math.max(1, ...days.map((d) => per[d].hr)), maxB = Math.max(1, ...days.map((d) => per[d].body));
       $("lchart").innerHTML = days.map((d, i) => {
         const dt = new Date(d + "T00:00"), mon = dt.getDay() === 1;
-        return `<div class="lday${mon && i ? " wk" : ""}" title="${dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}: HR ${Math.round(per[d].hr)} · body ${Math.round(per[d].body)}">
-          <i style="height:${(100 * per[d].hr) / max}%;background:#18181b;animation-delay:${i * 0.012}s"></i><i style="height:${(100 * per[d].body) / max}%;background:var(--run);animation-delay:${i * 0.012}s"></i></div>`;
+        return `<div class="lday${mon && i ? " wk" : ""}" title="${dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}: HR load ${Math.round(per[d].hr)} · body ${per[d].body.toFixed(1)} km-eq">
+          <i style="height:${(100 * per[d].hr) / maxH}%;background:#18181b;animation-delay:${i * 0.012}s"></i><i style="height:${(100 * per[d].body) / maxB}%;background:var(--run);animation-delay:${i * 0.012}s"></i></div>`;
       }).join("");
-      const p = L.paceAnchors(zones), pace = (v) => { const x = Math.round(1000 / v); return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`; };
-      $("load-sub").textContent = `ratio = last 7 days ÷ 28-day weekly average${p ? ` · run pace anchors ${pace(p.v_easy)} / ${pace(p.v_lt2)} per km` : ""}${missing ? ` · ${missing} activities without a saved track (Sync)` : ""}`;
+      $("load-sub").innerHTML = `ratio = last 7 days ÷ 28-day weekly average · bars scaled per metric${missing ? ` · ${missing} activities without a saved track` : ""}`;
     }
+
+    // ---- rolling 7 / 14 / 28-day sums, one point per day ----
+    let daily = null, rMetric = "hr", rMode = "sum";
+    function buildDaily(acts, m) {
+      const n = SHOW + 27, days = [...Array(n)].map((_, i) => ymd(addDays(today, i - n + 1)));
+      const per = Object.fromEntries(days.map((d) => [d, { hr: 0, body: 0, km: 0 }]));
+      let missing = 0;
+      for (const a of acts) {
+        const r = m[a.activity_id];
+        if (!per[a.date]) continue;
+        if (!r || r.hr_load == null) { missing++; continue; }
+        per[a.date].hr += r.hr_load; per[a.date].body += Number(r.body_load) || 0;
+      }
+      for (const x of items) if (x.f === "run" && per[x.date]) per[x.date].km += x.m / 1000;
+      daily = { days, per, missing };
+    }
+    function series() {
+      const { days, per } = daily, v = days.map((d) => per[d][rMetric]);
+      const out = {};
+      for (const w of WIN) {
+        const div = rMode === "week" ? w / 7 : 1;
+        out[w] = days.slice(27).map((_, i) => { let s = 0; for (let k = i + 27 - w + 1; k <= i + 27; k++) s += v[k]; return s / div; });
+      }
+      return { days: days.slice(27), out };
+    }
+    const fmt = (x) => (rMetric === "hr" ? String(Math.round(x)) : x.toFixed(1));
+    const UNIT = { hr: "TRIMP", body: "km-eq", km: "km" };
+    function renderRoll() {
+      if (!daily) return;
+      const { days, out } = series(), N = days.length;
+      const unit = UNIT[rMetric] + (rMode === "week" ? " / week" : "");
+      $("rnow").innerHTML = WIN.map((w) => {
+        const now = out[w][N - 1], ago = out[w][N - 1 - 28];
+        const d = ago ? Math.round((100 * (now - ago)) / ago) : null;
+        return `<div style="border-color:${RCOL[w]}"><b>${fmt(now)}</b><span>${w}-day ${rMode === "week" ? "avg / week" : "sum"} · ${UNIT[rMetric]}${d == null ? "" : ` · ${d >= 0 ? "+" : ""}${d}% vs 4 wk ago`}</span></div>`;
+      }).join("");
+      $("roll-sub").textContent = `· last ${SHOW} days, each point = sum of the days up to it${daily.missing ? ` · ${daily.missing} activities without a saved track` : ""}`;
+
+      const el = $("rchart"), W = el.clientWidth || 600, H = el.clientHeight || 240;
+      const pl = 34, pr = 8, pt = 8, pb = 22, iw = W - pl - pr, ih = H - pt - pb;
+      const max = Math.max(1e-9, ...WIN.flatMap((w) => out[w]));
+      const step = niceStep(max / 4), top = Math.ceil(max / step) * step;
+      const X = (i) => pl + (iw * i) / (N - 1), Y = (v) => pt + ih - (ih * v) / top;
+      let g = "";
+      for (let v = 0; v <= top + 1e-9; v += step) g += `<line x1="${pl}" x2="${W - pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line-2)"/><text x="${pl - 6}" y="${Y(v) + 3}" text-anchor="end">${rMetric === "hr" ? Math.round(v) : +v.toFixed(1)}</text>`;
+      days.forEach((d, i) => {
+        const dt = new Date(d + "T00:00");
+        if (dt.getDate() === 1) g += `<line x1="${X(i)}" x2="${X(i)}" y1="${pt}" y2="${pt + ih}" stroke="var(--line)"/><text x="${X(i) + 3}" y="${H - 6}">${dt.toLocaleDateString("en-GB", { month: "short" })}</text>`;
+      });
+      const lines = [28, 14, 7].map((w) => `<path d="${out[w].map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join("")}" fill="none" stroke="${RCOL[w]}" stroke-width="${w === 7 ? 2 : 1.75}" stroke-linejoin="round" stroke-linecap="round"/>`).join("");
+      el.querySelector("svg")?.remove();
+      el.insertAdjacentHTML("afterbegin", `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Rolling 7, 14 and 28 day ${UNIT[rMetric]}">${g}${lines}<line id="rx" y1="${pt}" y2="${pt + ih}" stroke="var(--mute)" stroke-dasharray="3 3" opacity="0"/>${WIN.map((w) => `<circle id="rd${w}" r="3.5" fill="${RCOL[w]}" stroke="var(--panel)" stroke-width="1.5" opacity="0"/>`).join("")}</svg>`);
+      const svg = el.querySelector("svg"), tip = $("rtip");
+      svg.onpointermove = (e) => {
+        const r = svg.getBoundingClientRect(), i = Math.max(0, Math.min(N - 1, Math.round(((e.clientX - r.left - pl) / iw) * (N - 1))));
+        const x = X(i), rx = svg.querySelector("#rx");
+        rx.setAttribute("x1", x); rx.setAttribute("x2", x); rx.setAttribute("opacity", 1);
+        for (const w of WIN) { const c = svg.querySelector("#rd" + w); c.setAttribute("cx", x); c.setAttribute("cy", Y(out[w][i])); c.setAttribute("opacity", 1); }
+        const dt = new Date(days[i] + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+        tip.innerHTML = `<b>${dt}</b><br>${WIN.map((w) => `<i style="background:${w === 7 ? "#fff" : RCOL[w]}"></i>${w} d: ${fmt(out[w][i])} ${unit}`).join("<br>")}`;
+        tip.style.left = Math.max(70, Math.min(W - 70, x)) + "px"; tip.classList.add("on");
+      };
+      svg.onpointerleave = () => { tip.classList.remove("on"); svg.querySelectorAll("#rx, circle").forEach((n) => n.setAttribute("opacity", 0)); };
+    }
+    function niceStep(x) { const p = 10 ** Math.floor(Math.log10(x || 1)), f = x / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
+    for (const [id, set] of [["r-metric", (v) => (rMetric = v)], ["r-mode", (v) => (rMode = v)]])
+      $(id).onclick = (e) => { const b = e.target.closest("button"); if (!b) return; set(b.dataset.v); $(id).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); renderRoll(); };
+    addEventListener("resize", () => { clearTimeout(renderRoll.t); renderRoll.t = setTimeout(renderRoll, 120); });
     const L = NdureLaps;
 
     const inWin = (x, n) => x.date >= ymd(addDays(today, -(n - 1)));
@@ -212,7 +307,7 @@
       }).filter((r) => r.w[2].n > 0);
       const maxKm = Math.max(1, ...rows.map((r) => r.w[2].m));
       if (!rows.length) {
-        $("tbl").innerHTML = `<tbody><tr><td class="empty" colspan="5">No activities in the last 28 days yet. Press Sync last 28 days.</td></tr></tbody>`;
+        $("tbl").innerHTML = `<tbody><tr><td class="empty" colspan="5">No activities in the last 28 days yet. Press Sync last 120 days.</td></tr></tbody>`;
       } else {
         const cell = (r, x) => r.dist ? `<b>${kmf(x.m)}</b> km<small>${hm(x.t)} · ${x.n}×</small>` : `<b>${hm(x.t)}</b><small>${x.n}×</small>`;
         const tot = WIN.map((n) => sum(items.filter((x) => inWin(x, n))));
@@ -243,17 +338,27 @@
     $("sync").onclick = async () => {
       $("sync").classList.add("busy"); $("sync").textContent = "Syncing…";
       try {
-        const { data, error } = await sb.functions.invoke("garmin", { body: { action: "sync", from: ymd(addDays(today, -27)), to: ymd(today) } });
-        if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch {} throw new Error(m); }
-        for (let k = 0; k < 40; k++) {
-          const { data: r } = await sb.functions.invoke("garmin", { body: { action: "prefetch", from: ymd(addDays(today, -27)), to: ymd(today) } });
+        const call = async (body) => {
+          const { data, error } = await sb.functions.invoke("garmin", { body });
+          if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch {} throw new Error(m); }
+          return data;
+        };
+        const data = { activities: 0, linked: 0 };
+        // newest 60 days first, then the 60 before (Garmin sync takes at most 62 days per call)
+        for (const [a, b] of [[-59, 0], [-119, -60]]) {
+          $("sync").textContent = `Syncing ${a === -59 ? "1" : "2"}/2…`;
+          const r = await call({ action: "sync", from: ymd(addDays(today, a)), to: ymd(addDays(today, b)) });
+          data.activities += r.activities || 0; data.linked += r.linked || 0;
+        }
+        for (let k = 0; k < 60; k++) {
+          const r = await call({ action: "prefetch", from: ymd(addDays(today, -119)), to: ymd(today) });
           if (!r || !r.remaining) break;
           $("sync").textContent = `Saving activities… ${r.total - r.remaining}/${r.total}`;
         }
         toast(`${data.activities} activities synced and saved · ${data.linked} diary sessions linked`);
         await load();
       } catch (e) { toast(e.message, true); }
-      $("sync").classList.remove("busy"); $("sync").textContent = "Sync last 28 days";
+      $("sync").classList.remove("busy"); $("sync").textContent = "Sync last 120 days";
     };
     $("logout").onclick = () => sb.auth.signOut();
 

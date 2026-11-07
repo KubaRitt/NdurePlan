@@ -7,7 +7,7 @@ dashboard.html 7 / 14 / 28-day distance and time per sport
 prompt.js     the diary → JSON prompt shown in the app
 settings.html Garmin key, heart-rate zones (Easy/AP1/AP2/AP3) per sport, neuromuscular rule
 activity.html one activity: lap chart coloured by zone, time in zone, lap list
-laps.js       lap engine + load model (HR load, body load, pace-anchor fitting)
+laps.js       lap engine + load model (TRIMP + body km)
 metrics.js    saves per-activity load results in activity_metrics, recalculates when settings change
 garmin.html   redirects to settings.html
 config.js     Supabase URL + publishable key (safe to ship)
@@ -81,7 +81,12 @@ Then add the Vercel URL in Supabase → Authentication → URL Configuration
 
 Rolling 7, 14 and 28 days ending today: distance (time for sports without distance) per sport, totals,
 km per week, and the last four 7-day blocks. Counts Garmin activities plus diary sessions that aren't
-linked to one, so nothing is counted twice. **Sync last 28 days** refreshes Garmin first.
+linked to one, so nothing is counted twice.
+
+**Progress graph**: for each of the last 90 days, the 7-, 14- and 28-day rolling sums ending that day, for
+HR load, body load or running km. **Per week** divides by 1, 2 and 4 weeks so the three lines sit on one scale.
+
+**Sync last 120 days** refreshes Garmin in two 60-day calls, then saves any new tracks.
 
 ## Laps and zones
 
@@ -106,17 +111,16 @@ Pages read saved activities straight from the database; Garmin is only asked whe
 
 ## Load
 
-Two numbers per activity, both "points per minute" on the same scale (an easy hour ≈ 55–60):
+Calculated second by second from the saved track (`laps.js`, `load()`), also shown per lap:
 
-- **HR load** follows a lactate-shaped curve of heart rate: `w = 0.8 + 0.2·e^(ln11·(HR − Easy)/(AP2 − Easy))`,
-  so 1.0 at your Easy limit, 3.0 at your AP2 limit, exponential above, capped at 10/min. Below 100 bpm
-  nothing counts; it ramps in up to 130 bpm.
-- **Body load** (running) uses the same curve on grade-adjusted pace, anchored at the pace you hold at your
-  Easy and AP2 limits (fitted from 3-min steady blocks of the last 30 days, or your own in Settings),
-  plus 0.1 per metre of descent. Neuromuscular reps count through their pace.
-- Strength / HIIT: 0.5 per minute (1 h ≈ 30 min easy running). Yoga / mobility: 0.1.
-  Bike / ski / swim body load = HR load × 0.4 / 0.7 / 0.3.
-- Results are stored in `activity_metrics` with a `calc_key`; when zones or pace anchors change they're
-  recalculated the next time they're shown.
+- **HR load** = Banister TRIMP: minutes × x × 0.64 × e^(1.92·x), x = (HR − resting) ÷ (max − resting).
+  Resting HR is Garmin's value for that day (`days.rhr`), falling back to the one in Settings → Load.
+  1 h easy ≈ 75, 30 min hard ≈ 95.
+- **Body load** = running-equivalent km: km × (speed ÷ easy pace, 0.4–2.5 for running/walking) × sport factor
+  (run/walk 1, ski 0.4, bike 0.1, swim 0) + 1 km per 100 m of descent.
+- Strength / HIIT: HR load = half of the same minutes of easy running (1 h ≈ 30 min), body load 0.
+- Settings → Load: max HR (198), resting HR fallback (48), easy running pace (5:30 /km).
+- Results are stored in `activity_metrics` with a `calc_key`; changing settings or the day's resting HR
+  recalculates them the next time they're shown.
 - Dashboard: last 7 days vs 28-day weekly average and their ratio (< 0.8 low, ≤ 1.3 steady, ≤ 1.5 rising,
-  above = spike), plus daily HR and body load for 28 days.
+  above = spike), daily bars for 28 days, and the rolling progress graph above.

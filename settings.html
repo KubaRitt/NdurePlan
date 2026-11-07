@@ -86,24 +86,21 @@
       </div>
     </section>
 
-    <!-- PACE ANCHORS -->
+    <!-- LOAD -->
     <section class="card">
-      <div class="top"><h2>Running pace anchors · body load</h2><span class="pill" id="pace-pill">–</span></div>
-      <p class="help">Body load for running follows your pace the way HR load follows heart rate. The two anchors are the pace you hold at your <b>Easy</b> limit and at your <b>AP2</b> limit (≈ threshold). They're fitted from the last 30 days of steady running (grade-adjusted), or you can set your own.</p>
-      <div class="key-row" style="align-items:center">
-        <span id="pace-fit" style="flex:1 1 260px;font-size:13px;color:var(--text-2)"></span>
-        <button class="inline" id="refit">Refit from last 30 days</button>
-      </div>
+      <div class="top"><h2>Load</h2><span class="pill ok">TRIMP + body km</span></div>
+      <p class="help"><b>HR load</b> = Banister TRIMP, second by second: minutes × x × 0.64 × e<sup>1.92·x</sup>, where x = (HR − resting) ÷ (max − resting). Resting HR is Garmin's value for that day; the one below is only used when it's missing.<br>
+      <b>Body load</b> = running-equivalent km for bones, tendons and muscles: km × (your speed ÷ easy pace, 0.4–2.5) + 1 km per 100 m of descent; ski counts 0.4, bike 0.1, swim 0.<br>
+      Strength/HIIT: HR load = half of the same minutes of easy running (1 h ≈ 30 min), body load 0.</p>
       <div class="tbl-wrap"><table>
-        <thead><tr><th>Use my own</th><th>Easy limit pace</th><th>AP2 limit pace</th></tr></thead>
+        <thead><tr><th>Max HR</th><th>Resting HR (fallback)</th><th>Easy running pace</th></tr></thead>
         <tbody><tr>
-          <td><input type="checkbox" id="pm-on" style="width:auto" aria-label="Use my own pace anchors"></td>
-          <td><input class="wide" id="pm-easy" placeholder="e.g. 5:10" aria-label="Easy limit pace"><span class="unit">/km</span></td>
-          <td><input class="wide" id="pm-lt2" placeholder="e.g. 3:55" aria-label="AP2 limit pace"><span class="unit">/km</span></td>
+          <td><input type="number" id="ld-max" min="140" max="230" aria-label="Max heart rate"><span class="unit">bpm</span></td>
+          <td><input type="number" id="ld-rest" min="30" max="90" aria-label="Resting heart rate"><span class="unit">bpm</span></td>
+          <td><input class="wide" id="ld-pace" placeholder="5:30" aria-label="Easy running pace"><span class="unit">/km</span></td>
         </tr></tbody>
       </table></div>
-      <p class="help">HR load: points per minute shaped like a lactate curve, almost flat through Easy (1.0 at the Easy limit), 3.0 at the AP2 limit, then exponential. Body load adds 1 point per 10 m of descent. Strength/HIIT count 0.5 per minute (1 h ≈ 30 min easy running), yoga 0.1. Bike, ski and swim body load = HR load × 0.4 / 0.7 / 0.3. Saving zones recalculates all loads.</p>
-      <div class="msg" id="pace-msg"></div>
+      <p class="help" id="ld-preview"></p>
     </section>
 
     <!-- NEUROMUSCULAR -->
@@ -127,7 +124,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="laps.js"></script>
-  <script src="metrics.js"></script>
   <script>
     const sb = supabase.createClient(NDURE.url, NDURE.key);
     const $ = (id) => document.getElementById(id);
@@ -217,7 +213,6 @@
       const out = {}; let bad = false;
       document.querySelectorAll("#zones tr").forEach((tr) => {
         const k = tr.dataset.k, z = {};
-        if (k === "run" && zones.run && zones.run.pace) z.pace = zones.run.pace;
         L.ZONES.forEach((zz) => { const i = tr.querySelector(`[data-z=${zz}]`); if (i.value !== "") z[zz] = Math.round(Number(i.value)); if (i.classList.contains("bad")) bad = true; });
         out[k] = z;
       });
@@ -229,21 +224,33 @@
         spEl.classList.toggle("bad", sp !== "" && !ms); if (sp !== "" && !ms) bad = true;
         out[k].nm_min_speed = ms ? Math.round(ms * 1000) / 1000 : null;
       });
-      // own pace anchors
-      const on = $("pm-on").checked, e = paceToMs($("pm-easy").value), l2 = paceToMs($("pm-lt2").value);
-      $("pm-easy").classList.toggle("bad", on && !e); $("pm-lt2").classList.toggle("bad", on && (!l2 || (e && l2 <= e)));
-      if (on && (!e || !l2 || l2 <= e)) bad = true;
-      out.run.pace_manual = on && e && l2 ? { v_easy: Math.round(e * 1000) / 1000, v_lt2: Math.round(l2 * 1000) / 1000 } : null;
+      if (!readLoad()) bad = true;
+      out.load = loadCfg;
       return bad ? null : out;
     }
 
-    function renderPace() {
-      const p = zones.run && zones.run.pace, m = zones.run && zones.run.pace_manual;
-      $("pace-fit").innerHTML = p ? `Fitted: Easy limit <b>${msToPace(p.v_easy)}</b> /km · AP2 limit <b>${msToPace(p.v_lt2)}</b> /km <span style="color:var(--mute)">(${p.runs ?? "?"} runs, r² ${p.r2}, ${p.fitted_at})</span>` : `<span style="color:var(--mute)">Not fitted yet. Needs Run zones and at least 3 saved runs with steady stretches.</span>`;
-      $("pm-on").checked = !!m;
-      $("pm-easy").value = m ? msToPace(m.v_easy) : ""; $("pm-lt2").value = m ? msToPace(m.v_lt2) : "";
-      $("pace-pill").textContent = m ? "using your own" : p ? "fitted" : "not set";
-      $("pace-pill").className = "pill" + (m || p ? " ok" : "");
+    // ---- load settings ----
+    let loadCfg = {};
+    const secToPace = (x) => `${Math.floor(x / 60)}:${String(Math.round(x % 60)).padStart(2, "0")}`;
+    function renderLoad() {
+      const c = L.loadCfg(zones);
+      $("ld-max").value = c.max_hr; $("ld-rest").value = c.rest_hr; $("ld-pace").value = secToPace(c.easy_pace_s);
+      ["ld-max", "ld-rest", "ld-pace"].forEach((id) => ($(id).oninput = () => { readLoad(); preview(); }));
+      readLoad(); preview();
+    }
+    function readLoad() {
+      const max = Number($("ld-max").value), rest = Number($("ld-rest").value), m = /^(\d{1,2}):(\d{2})$/.exec($("ld-pace").value.trim());
+      const pace = m ? Number(m[1]) * 60 + Number(m[2]) : null;
+      $("ld-max").classList.toggle("bad", !(max >= 140 && max <= 230));
+      $("ld-rest").classList.toggle("bad", !(rest >= 30 && rest <= 90 && rest < max));
+      $("ld-pace").classList.toggle("bad", !(pace >= 150 && pace <= 600));
+      loadCfg = { max_hr: max, rest_hr: rest, easy_pace_s: pace };
+      return !document.querySelector("#ld-max.bad, #ld-rest.bad, #ld-pace.bad");
+    }
+    function preview() {
+      const c = loadCfg; if (!(c.max_hr > c.rest_hr)) return;
+      const rows = [130, 150, 170, 185].map((hr) => `${hr} bpm → ${Math.round(60 * L.trimpRate(hr, c.rest_hr, c.max_hr))}`);
+      $("ld-preview").textContent = `HR load for 1 hour at: ${rows.join(" · ")}`;
     }
 
     $("save").onclick = async () => {
@@ -253,7 +260,7 @@
       const { error } = await sb.from("user_settings").upsert({ user_id: me.id, zones: z, updated_at: new Date().toISOString() });
       $("save").disabled = false;
       if (error) return msg("save-msg", error.message, "err");
-      zones = z; renderPace(); msg("save-msg", "Saved. Laps and loads update the next time they're shown.", "ok");
+      zones = z; msg("save-msg", "Saved. Laps and loads update the next time they're shown.", "ok");
     };
 
     $("logout").onclick = () => sb.auth.signOut();
@@ -265,15 +272,7 @@
       $("app").hidden = false;
       const { data: row } = await sb.from("user_settings").select("zones").maybeSingle();
       zones = row?.zones || {};
-      render(); renderPace(); refreshKey();
-      $("refit").onclick = async () => {
-        $("refit").disabled = true; msg("pace-msg", "Fitting from your saved runs…");
-        const r = await NdureMetrics(sb).refitPace();
-        $("refit").disabled = false;
-        if (!r.fit) return msg("pace-msg", `Couldn't fit from ${r.runs} runs. Sync Garmin first, set Run zones, and run a few steady stretches.`, "err");
-        const { data: row2 } = await sb.from("user_settings").select("zones").maybeSingle();
-        zones = row2?.zones || zones; renderPace(); msg("pace-msg", "Pace anchors updated.", "ok");
-      };
+      render(); renderLoad(); refreshKey();
     })();
     sb.auth.onAuthStateChange((e) => { if (e === "SIGNED_OUT") location.replace("index.html"); });
   </script>

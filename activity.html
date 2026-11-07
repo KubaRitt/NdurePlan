@@ -139,7 +139,7 @@
     const ZC = (z) => `var(--z-${z})`;
     const clock = (s) => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
     const km = (m) => (m == null ? "–" : m >= 995 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m");
-    let act = null, session = null, data = null, result = null, family = "other", zones = {};
+    let act = null, session = null, data = null, result = null, family = "other", zones = {}, lapLoads = [], rhr = null;
     const M = NdureMetrics(sb);
 
     const INT = { warmup: "warm-up", cooldown: "cool-down", recovery: "recovery", rest: "rest", interval: "interval", other: "" };
@@ -166,6 +166,7 @@
         sb.from("diary_sessions").select("sport_raw,rpe,pain,pain_where,structure,note").eq("activity_id", id).maybeSingle(),
         sb.from("user_settings").select("zones").maybeSingle(),
       ]);
+      if (a.data) rhr = (await sb.from("days").select("rhr").eq("date", a.data.date).maybeSingle()).data?.rhr ?? null;
       act = a.data; session = s.data;
       if (!act) { $("chart").innerHTML = '<div class="loading">Activity not found. Sync Garmin from the calendar first.</div>'; return; }
       family = act.family || "other";
@@ -253,23 +254,19 @@
       svgEl.ontouchstart = svgEl.ontouchmove = (e) => { highlight(lapAt(e.touches[0].clientX)); };
 
       // ---- load ----
-      const ld = L.load(r, family, act.sport_key, zones);
-      M.save([M.compute(act, data, zones)]).catch(() => {});
-      const pz = L.paceAnchors(zones);
+      const ld = L.load(r, family, act.sport_key, zones, rhr);
+      M.save([M.compute(act, data, zones, rhr)]).catch(() => {});
       const parts = [];
-      if (ld.basis === "pace") {
-        if (ld.descentPts) parts.push(`${ld.descentPts} from ${ld.descent} m downhill`);
-        if (ld.nmPts) parts.push(`${ld.nmPts} from neuromuscular reps`);
-        parts.push("pace-based");
-      } else if (ld.basis === "impact") parts.push(family === "run" || family === "walk" ? "pace anchors not fitted yet, so = HR load" : `${family} · HR load × impact factor`);
-      else parts.push(ld.note);
-      const diff = ld.hr && ld.body ? ld.body / ld.hr : null;
-      const hint = diff == null ? "" : diff > 1.25 ? "Body load clearly above HR load: mechanically harder than your heart rate shows (sprints, downhill, fast running)." : diff < 0.8 ? "HR load clearly above body load: heart rate high for the pace (heat, fatigue, illness, hills at slow pace)." : "Body and HR load agree.";
+      if (ld.basis === "trimp") {
+        parts.push(`TRIMP with resting HR ${ld.rest}${rhr ? " (Garmin, that day)" : " (Settings)"} and max HR ${ld.max}`);
+        if (ld.km) parts.push(`${ld.km} km${ld.descent ? `, ${ld.descent} m down` : ""} → ${ld.body} running-equivalent km`);
+      } else parts.push(ld.note);
       $("load").innerHTML = `<div class="loads">
-          <div><b>${ld.hr ?? "–"}</b><span>HR load</span></div>
-          <div><b>${ld.body ?? "–"}</b><span>Body load</span></div>
+          <div><b>${ld.hr ?? "–"}</b><span>HR load (TRIMP)</span></div>
+          <div><b>${ld.body ?? "–"}</b><span>Body load (run-equiv. km)</span></div>
         </div>
-        <p class="lnote">${esc(parts.join(" · "))}${hint ? `<br>${hint}` : ""}${!r.hasZones ? '<br><a href="settings.html">Set zones in Settings</a> to calculate load.' : ""}</p>`;
+        <p class="lnote">${esc(parts.join(" · "))} · <a href="settings.html">settings</a></p>`;
+      lapLoads = ld.laps || [];
 
       // ---- time in zone ----
       const total = Object.values(r.tiz).reduce((a, b) => a + b, 0) || 1;
@@ -296,11 +293,11 @@
       // ---- lap table ----
       const pw = r.hasPower;
       $("laps-sub").textContent = r.hasSpeed ? "pace from the speed sensor" : "";
-      $("laps").innerHTML = `<thead><tr><th>#</th><th>Zone</th><th>Start</th><th>Time</th><th>Distance</th><th>${paceUnit() === "speed" ? "Speed" : "Pace"}</th><th>Avg HR</th><th>Max HR</th>${pw ? "<th>Power</th>" : ""}</tr></thead>
+      $("laps").innerHTML = `<thead><tr><th>#</th><th>Zone</th><th>Start</th><th>Time</th><th>Distance</th><th>${paceUnit() === "speed" ? "Speed" : "Pace"}</th><th>Avg HR</th><th>Max HR</th>${pw ? "<th>Power</th>" : ""}${lapLoads.some(Boolean) ? "<th>HR load</th><th>Body km</th>" : ""}</tr></thead>
         <tbody>${laps.map((l, k) => `<tr data-k="${k}">
           <td>${l.n}</td><td><span class="zp" style="background:${ZC(l.zone)}">${L.SHORT[l.zone]}</span>${l.intensity && l.intensity !== "active" ? `<span class="it">${esc(INT[l.intensity] || l.intensity)}</span>` : ""}</td>
           <td>${clock(l.t0)}</td><td>${clock(l.dur)}</td><td>${km(l.dist)}</td>
-          <td class="${l.fast ? "fast" : ""}">${fmtSpeed(l.speed)}</td><td>${l.hr ?? "–"}</td><td>${l.hrMax ?? "–"}</td>${pw ? `<td>${l.power ?? "–"}</td>` : ""}</tr>`).join("")}</tbody>`;
+          <td class="${l.fast ? "fast" : ""}">${fmtSpeed(l.speed)}</td><td>${l.hr ?? "–"}</td><td>${l.hrMax ?? "–"}</td>${pw ? `<td>${l.power ?? "–"}</td>` : ""}${lapLoads.some(Boolean) ? `<td>${lapLoads[k] ? lapLoads[k].hr.toFixed(1) : "–"}</td><td>${lapLoads[k] ? lapLoads[k].body.toFixed(2) : "–"}</td>` : ""}</tr>`).join("")}</tbody>`;
       document.querySelectorAll("#laps tbody tr").forEach((tr) => { tr.onmouseenter = () => highlight(+tr.dataset.k); tr.onmouseleave = () => highlight(-1); });
     }
 

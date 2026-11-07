@@ -412,7 +412,8 @@
         const [zones, saved] = await Promise.all([M.settings(), savedActivity(id)]);
         const act = actById(id);
         const res = NdureLaps.analyse(saved.series, fam, zones, saved.laps);
-        if (res && act) { res.ld = NdureLaps.load(res, fam, act.sport_key, zones); M.save([M.compute(act, saved, zones)]).catch(() => {}); }
+        const rhr = act ? data.days[act.date]?.rhr : null;
+        if (res && act) { res.ld = NdureLaps.load(res, fam, act.sport_key, zones, rhr); M.save([M.compute(act, saved, zones, rhr)]).catch(() => {}); }
         return res;
       })().catch(() => null);
       lapCache.set(id, p);
@@ -434,7 +435,7 @@
         const total = Object.values(r.tiz).reduce((x, y) => x + y, 0) || 1;
         const top = NdureLaps.ORDER.filter((z) => z !== "none" && r.tiz[z] >= 30).sort((x, y) => r.tiz[y] - r.tiz[x]).slice(0, 4);
         const tz = el.parentElement.querySelector(".tizs");
-        const loadTxt = r.ld && r.ld.hr != null ? `<span class="ld">Load <b>${r.ld.hr}</b> HR · <b>${r.ld.body ?? "–"}</b> body</span>` : "";
+        const loadTxt = r.ld && r.ld.hr != null ? `<span class="ld">HR load <b>${r.ld.hr}</b> · body <b>${r.ld.body ?? "–"}</b> km-eq</span>` : "";
         if (tz) tz.innerHTML = r.hasZones ? loadTxt + top.map((z) => `<span><i style="background:var(--z-${z})"></i>${NdureLaps.SHORT[z]} ${hm(r.tiz[z])}</span>`).join("") : loadTxt + `<span class="muted">Set zones in Settings to colour laps</span>`;
       });
     }
