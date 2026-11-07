@@ -20,12 +20,36 @@
       }
       return row(act, L.load(res, fam, act.sport_key, zones, rhr), res, zones, rhr);
     }
-    const key = (zones, act, rhr) => L.calcKey(zones, act.family || "other") + "|" + (rhr ?? "");
+    const key = (zones, act, rhr) => L.calcKey(zones, act.family || "other") + "|" + (rhr ?? "") + "|h1";
+
+    // Second-by-second distributions for the dashboard:
+    //   hr: { "140": seconds at 140–144 bpm, … } (5 bpm bins)
+    //   sp: { bin: [seconds, Σ hr·s, seconds with hr] }, bins = pace s/km floored to 5 s (run/walk) or km/h floored to 1
+    function hist(s, fam) {
+      if (!s || !s.n) return null;
+      const pace = fam === "run" || fam === "walk";
+      const hr = {}, sp = {};
+      for (let i = 0; i < s.n; i++) {
+        const dt = s.dt[i]; if (!(dt > 0)) continue;
+        const h = s.hr && s.hr[i], hOk = h >= 40 && h <= 235;
+        if (hOk) { const b = Math.floor(h / 5) * 5; hr[b] = (hr[b] || 0) + dt; }
+        const v = s.v && s.v[i];
+        if (!(v > 0.5)) continue; // standing
+        let b;
+        if (pace) { const p = 1000 / v; if (p < 120 || p > 900) continue; b = Math.floor(p / 5) * 5; }
+        else { const k = v * 3.6; if (k > 90) continue; b = Math.floor(k); }
+        const c = (sp[b] ||= [0, 0, 0]);
+        c[0] += dt; if (hOk) { c[1] += h * dt; c[2] += dt; }
+      }
+      const r = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Array.isArray(v) ? v.map(Math.round) : Math.round(v)]));
+      return { hr: r(hr), sp: r(sp), unit: pace ? "pace" : "kmh" };
+    }
     function row(act, ld, res, zones, rhr) {
       return {
         activity_id: act.activity_id, date: act.date, family: act.family,
         hr_load: ld.hr, body_load: ld.body, basis: ld.basis, descent_m: ld.descent ?? null,
         nm_reps: res ? res.counts.reps : 0, tiz: res ? Object.fromEntries(Object.entries(res.tiz).map(([k, v]) => [k, Math.round(v)])) : null,
+        hist: res ? hist(res.s, act.family) : null,
         calc_key: key(zones, act, rhr), updated_at: new Date().toISOString(),
       };
     }

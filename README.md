@@ -79,12 +79,19 @@ Then add the Vercel URL in Supabase → Authentication → URL Configuration
 
 ## Dashboard
 
-Rolling 7, 14 and 28 days ending today: distance (time for sports without distance) per sport, totals,
-km per week, and the last four 7-day blocks. Counts Garmin activities plus diary sessions that aren't
-linked to one, so nothing is counted twice.
+Everything is rolling (windows ending today), not calendar weeks.
 
-**Progress graph**: for each of the last 90 days, the 7-, 14- and 28-day rolling sums ending that day, for
-HR load, body load or running km. **Per week** divides by 1, 2 and 4 weeks so the three lines sit on one scale.
+1. **Tiles**: HR load, body load, running km, training time. Big number = last 7 days, plus 14 and 28 days,
+   a 90-day sparkline of the 7-day sum, and a status (7 days ÷ 28-day weekly average: < 0.8 easing off,
+   ≤ 1.3 steady, ≤ 1.5 building fast, above = spike). Click a tile to chart it.
+2. **Rolling sums**: 7-, 14- and 28-day sums for every day of the last 90.
+3. **Heart vs legs**: HR load and body load each as % of a normal week, on one scale, with an auto
+   sentence when they diverge (legs ahead = more pounding than usual).
+4. **Where your time goes**: per sport and period (7 / 28 / 90 d), second-by-second heart rate in 5 bpm bins
+   and pace (run/walk, min/km) or speed (km/h), each bar coloured by HR zone (speed bars by the average HR
+   at that speed). Histograms are stored per activity in `activity_metrics.hist`.
+5. **Per sport**: distance / time / sessions for 7, 14, 28 days. Garmin activities plus diary sessions that
+   aren't linked to one.
 
 **Sync last 120 days** refreshes Garmin in two 60-day calls, then saves any new tracks.
 
@@ -123,4 +130,4 @@ Calculated second by second from the saved track (`laps.js`, `load()`), also sho
 - Results are stored in `activity_metrics` with a `calc_key`; changing settings or the day's resting HR
   recalculates them the next time they're shown.
 - Dashboard: last 7 days vs 28-day weekly average and their ratio (< 0.8 low, ≤ 1.3 steady, ≤ 1.5 rising,
-  above = spike), daily bars for 28 days, and the rolling progress graph above.
+  above = spike), see Dashboard above.
