@@ -47,6 +47,19 @@
     .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin-top: 12px; }
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .legend i { width: 8px; height: 8px; border-radius: 2px; }
+    .lcards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 640px) { .lcards { grid-template-columns: 1fr; } }
+    .lcard { background: var(--panel-2); border-radius: 6px; padding: 12px 14px; }
+    .lcard .lt { font-size: 12px; font-weight: 650; color: var(--mute); }
+    .lcard .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+    .lcard b { display: block; font-size: 20px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .lcard span { font-size: 11px; color: var(--mute); }
+    .ratio { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-top: 2px; }
+    .lchart { display: grid; grid-template-columns: repeat(28, minmax(0, 1fr)); gap: 3px; align-items: end; height: 140px; margin-top: 16px; }
+    .lday { display: flex; gap: 1px; align-items: end; height: 100%; position: relative; }
+    .lday i { flex: 1; display: block; border-radius: 2px 2px 0 0; transform-origin: bottom; animation: rise-y .6s var(--spring) both; min-height: 0; }
+    .lday.wk::after { content: ""; position: absolute; left: -2px; top: 0; bottom: 0; width: 1px; background: var(--line); }
+    @keyframes rise-y { from { transform: scaleY(0); } }
     .empty { color: var(--mute); font-size: 13px; padding: 24px 0; text-align: center; }
     .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--text); color: #fff; font-size: 13px; font-weight: 550; padding: 10px 16px; border-radius: 10px; transition: transform .4s var(--spring), opacity .2s; z-index: 60; max-width: calc(100vw - 32px); }
     .toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
@@ -74,6 +87,12 @@
       <button class="inline" id="sync">Sync last 28 days</button>
     </div>
     <div class="kpis" id="kpis"></div>
+    <div class="panel" id="load-panel">
+      <h2 style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>Load</span><small id="load-sub" style="font-weight:500;color:var(--mute);font-size:12px"></small></h2>
+      <div class="lcards" id="lcards"></div>
+      <div class="lchart" id="lchart"></div>
+      <div class="legend"><span><i style="background:#18181b"></i>HR load</span><span><i style="background:var(--run)"></i>Body load</span></div>
+    </div>
     <div class="panel">
       <h2>Distance per sport</h2>
       <div class="tbl-wrap"><table id="tbl"></table></div>
@@ -88,6 +107,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="laps.js"></script>
+  <script src="metrics.js"></script>
   <script>
     const sb = supabase.createClient(NDURE.url, NDURE.key);
     const $ = (id) => document.getElementById(id);
@@ -112,7 +133,7 @@
       const from = ymd(first < addDays(today, -27) ? first : addDays(today, -27)), to = ymd(today);
       $("range").textContent = `${addDays(today, -27).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${today.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · rolling windows ending today`;
       const [a, s] = await Promise.all([
-        sb.from("garmin_activities").select("activity_id,date,family,duration_s,distance_m").gte("date", from).lte("date", to),
+        sb.from("garmin_activities").select("activity_id,date,family,sport_key,duration_s,distance_m").gte("date", from).lte("date", to),
         sb.from("diary_sessions").select("date,family,duration_min,distance_km,activity_id").gte("date", from).lte("date", to).is("activity_id", null),
       ]);
       if (a.error || s.error) toast((a.error || s.error).message, true);
@@ -122,7 +143,53 @@
         ...(s.data ?? []).map((x) => ({ date: x.date, f: x.family || "other", m: (Number(x.distance_km) || 0) * 1000, t: (Number(x.duration_min) || 0) * 60 })),
       ].filter((x) => x.m > 0 || x.t > 0);
       render();
+      loadLoads(a.data ?? []);
     }
+
+    // ---- load: HR and body load per day, 7-day vs 28-day ----
+    const M = NdureMetrics(sb);
+    async function loadLoads(acts) {
+      const sub = $("load-sub");
+      try {
+        const zones = await M.settings();
+        const pace = zones.run && zones.run.pace;
+        const stale = !pace || !pace.fitted_at || (Date.now() - new Date(pace.fitted_at)) / 864e5 > 7;
+        if (!(zones.run && zones.run.pace_manual) && stale && zones.run && zones.run.easy) { sub.textContent = "Fitting your pace anchors…"; await M.refitPace(); }
+        const since = ymd(addDays(today, -27));
+        const recent = acts.filter((x) => x.date >= since);
+        const m = await M.ensure(recent, (i, n) => (sub.textContent = `Calculating load ${i}/${n}…`));
+        renderLoads(recent, m, await M.settings());
+      } catch (e) { sub.textContent = "Couldn't calculate load: " + e.message; }
+    }
+    function renderLoads(acts, m, zones) {
+      const days = [...Array(28)].map((_, i) => ymd(addDays(today, i - 27)));
+      const per = Object.fromEntries(days.map((d) => [d, { hr: 0, body: 0 }]));
+      let missing = 0;
+      for (const a of acts) {
+        const r = m[a.activity_id];
+        if (!r || r.hr_load == null) { missing++; continue; }
+        per[a.date].hr += r.hr_load; per[a.date].body += r.body_load ?? r.hr_load;
+      }
+      const sum = (k, n) => days.slice(-n).reduce((x, d) => x + per[d][k], 0);
+      const card = (k, label) => {
+        const a7 = sum(k, 7), c28 = sum(k, 28) / 4, ratio = c28 ? a7 / c28 : null;
+        const [txt, bg, fg] = ratio == null ? ["–", "var(--panel)", "var(--mute)"] : ratio < 0.8 ? ["low", "#e0f2fe", "#075985"] : ratio <= 1.3 ? ["steady", "#dcfce7", "#166534"] : ratio <= 1.5 ? ["rising", "#fef3c7", "#92400e"] : ["spike", "#fee2e2", "#991b1b"];
+        return `<div class="lcard"><div class="lt">${label}</div><div class="row3">
+          <div><b>${Math.round(a7)}</b><span>last 7 days</span></div>
+          <div><b>${Math.round(c28)}</b><span>28-day avg / week</span></div>
+          <div><b>${ratio == null ? "–" : ratio.toFixed(2)}</b><span class="ratio" style="background:${bg};color:${fg}">${txt}</span></div></div></div>`;
+      };
+      $("lcards").innerHTML = card("hr", "HR load") + card("body", "Body load");
+      const max = Math.max(1, ...days.map((d) => Math.max(per[d].hr, per[d].body)));
+      $("lchart").innerHTML = days.map((d, i) => {
+        const dt = new Date(d + "T00:00"), mon = dt.getDay() === 1;
+        return `<div class="lday${mon && i ? " wk" : ""}" title="${dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}: HR ${Math.round(per[d].hr)} · body ${Math.round(per[d].body)}">
+          <i style="height:${(100 * per[d].hr) / max}%;background:#18181b;animation-delay:${i * 0.012}s"></i><i style="height:${(100 * per[d].body) / max}%;background:var(--run);animation-delay:${i * 0.012}s"></i></div>`;
+      }).join("");
+      const p = L.paceAnchors(zones), pace = (v) => { const x = Math.round(1000 / v); return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, "0")}`; };
+      $("load-sub").textContent = `ratio = last 7 days ÷ 28-day weekly average${p ? ` · run pace anchors ${pace(p.v_easy)} / ${pace(p.v_lt2)} per km` : ""}${missing ? ` · ${missing} activities without a saved track (Sync)` : ""}`;
+    }
+    const L = NdureLaps;
 
     const inWin = (x, n) => x.date >= ymd(addDays(today, -(n - 1)));
     function sum(list) { return list.reduce((o, x) => ({ m: o.m + x.m, t: o.t + x.t, n: o.n + 1 }), { m: 0, t: 0, n: 0 }); }
@@ -178,7 +245,12 @@
       try {
         const { data, error } = await sb.functions.invoke("garmin", { body: { action: "sync", from: ymd(addDays(today, -27)), to: ymd(today) } });
         if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch {} throw new Error(m); }
-        toast(`${data.activities} activities synced · ${data.linked} diary sessions linked`);
+        for (let k = 0; k < 40; k++) {
+          const { data: r } = await sb.functions.invoke("garmin", { body: { action: "prefetch", from: ymd(addDays(today, -27)), to: ymd(today) } });
+          if (!r || !r.remaining) break;
+          $("sync").textContent = `Saving activities… ${r.total - r.remaining}/${r.total}`;
+        }
+        toast(`${data.activities} activities synced and saved · ${data.linked} diary sessions linked`);
         await load();
       } catch (e) { toast(e.message, true); }
       $("sync").classList.remove("busy"); $("sync").textContent = "Sync last 28 days";

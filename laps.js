@@ -38,7 +38,7 @@
     for (let i = 0; i < raw.length; i++) if (isNum(raw[i])) idx.push(i);
     const pick = (a) => (a ? idx.map((i) => a[i]) : null);
     const t = pick(raw);
-    const s = { t, hr: pick(series.hr), v: pick(series.v), d: pick(series.d), p: pick(series.p) };
+    const s = { t, hr: pick(series.hr), v: pick(series.v), d: pick(series.d), p: pick(series.p), gap: pick(series.gap), e: pick(series.e) };
     const n = t.length;
     const step = median(t.slice(1).map((x, i) => x - t[i])) || 1;
     s.dt = t.map((x, i) => (i < n - 1 ? Math.min(Math.max(t[i + 1] - x, 0), 10 * step) : step));
@@ -244,7 +244,130 @@
     return { laps, tiz, hasSpeed: o.hasSpeed, hasPower: o.hasPower, hasZones: !!(z && isNum(z.easy)), typical: o.typical, s, counts, zoneKey: o.key, source: o.source };
   }
 
-  const api = { analyse, hrZone, zoneKey, ZONES, LABEL, SHORT, ORDER, ZONE_SPORTS, DEFAULT_NM, smooth, median };
+  // ---- load ---------------------------------------------------------------
+  // Both loads are "points per minute", shaped like a lactate curve: almost flat through Easy,
+  // 1.0 at the Easy limit (≈ LT1), 3.0 at the AP2 limit (≈ LT2, "4 mmol"), then exponential.
+  //   w(x) = 0.8 + 0.2 · e^(ln 11 · (x − easy) / (lt2 − easy))
+  // HR load uses heart rate for x; body load (running) uses grade-adjusted pace, with pace anchors
+  // fitted from the last 30 days, plus downhill metres. One hour of easy running ≈ 55–60 points.
+  const LOAD_VERSION = 1;
+  const LN11 = Math.log(11);
+  const W_CAP = 10;               // max points per minute (sprints can't explode the score)
+  const HR_FLOOR = 100;           // below this heart rate nothing counts …
+  const HR_RAMP = 30;             // … and it ramps in over the next 30 bpm
+  const DESCENT_PTS = 0.1;        // body load per metre of descent (1 point per 10 m)
+  const IMPACT = { bike: 0.4, ski: 0.7, swim: 0.3, other: 0.5 }; // body load = HR load × factor
+  const FIXED = [                 // sports where heart rate doesn't represent the work
+    [/yoga|pilates|breath|mobility|stretch|meditat/, 0.1, "recovery session"],
+    [/strength|hiit|crossfit|cardio|boulder|climb|functional|weight/, 0.5, "1 h ≈ 30 min easy running"],
+  ];
+
+  // your own paces (Settings) win over the fitted ones
+  const paceAnchors = (settings) => {
+    const r = settings && settings.run;
+    if (!r) return null;
+    if (r.pace_manual && isNum(r.pace_manual.v_easy) && isNum(r.pace_manual.v_lt2)) return r.pace_manual;
+    return r.pace && isNum(r.pace.v_easy) ? r.pace : null;
+  };
+  // identifies everything a load result depends on; when it changes, the load is recalculated
+  function calcKey(settings, family) {
+    const key = zoneKey(family), z = (settings && settings[key]) || {};
+    const parts = [LOAD_VERSION, z.easy, z.ap1, z.ap2, z.ap3, z.nm_max_s, z.nm_min_speed];
+    if (family === "run" || family === "walk") { const p = paceAnchors(settings); parts.push(p && p.v_easy, p && p.v_lt2); }
+    return parts.map((x) => (x == null ? "" : x)).join("|");
+  }
+  const curve = (x, easy, lt2) => Math.min(W_CAP, 0.8 + 0.2 * Math.exp((LN11 * (x - easy)) / (lt2 - easy)));
+  function hrWeight(hr, z) {
+    if (!isNum(hr) || !z || !isNum(z.easy) || !isNum(z.ap2) || z.ap2 <= z.easy) return null;
+    const ramp = Math.min(1, Math.max(0, (hr - HR_FLOOR) / HR_RAMP));
+    return ramp * curve(hr, z.easy, z.ap2);
+  }
+  function paceWeight(v, pz) {
+    if (!isNum(v) || !pz || !isNum(pz.v_easy) || !isNum(pz.v_lt2) || pz.v_lt2 <= pz.v_easy) return null;
+    if (v <= 0.3) return 0;
+    if (v < pz.v_easy) return (v / pz.v_easy) ** 2; // walking ≈ 0.2, slow jog ≈ 0.7
+    return curve(v, pz.v_easy, pz.v_lt2);
+  }
+
+  // Load for one activity. `res` is the result of analyse(); sportKey is Garmin's activity type.
+  function load(res, family, sportKey, settings) {
+    const s = res.s, key = zoneKey(family), z = (settings && settings[key]) || null;
+    const dur = s.dt.reduce((a, b) => a + b, 0);
+    const fixed = FIXED.find(([re]) => re.test(String(sportKey || "").toLowerCase()));
+    if (fixed || family === "strength") {
+      const per = fixed ? fixed[1] : 0.5;
+      const pts = (per * dur) / 60;
+      return { hr: Math.round(pts), body: Math.round(pts), basis: "fixed", note: fixed ? fixed[2] : "1 h ≈ 30 min easy running", version: LOAD_VERSION };
+    }
+    // HR load
+    let hrPts = null;
+    if (s.hr && z && isNum(z.easy) && isNum(z.ap2)) {
+      hrPts = 0;
+      for (let i = 0; i < s.n; i++) { const w = hrWeight(s.hr[i], z); if (w) hrPts += (w * s.dt[i]) / 60; }
+    }
+    // Body load
+    let body = null, descent = 0, nmPts = 0, basis = "impact";
+    const pz = paceAnchors(settings);
+    const runLike = family === "run" || family === "walk";
+    if (runLike && pz && (s.gap || s.v)) {
+      const sig = smooth(s.gap && s.gap.some(isNum) ? s.gap : s.v, s.t, 5);
+      body = 0; basis = "pace";
+      const nmIdx = new Set();
+      res.laps.filter((l) => l.zone === "nm").forEach((l) => { for (let i = l.i0; i < l.i1; i++) nmIdx.add(i); });
+      for (let i = 0; i < s.n; i++) {
+        const w = paceWeight(sig[i], pz);
+        if (w) { const p = (w * s.dt[i]) / 60; body += p; if (nmIdx.has(i)) nmPts += p; }
+      }
+      if (s.e) {
+        const e = smooth(s.e, s.t, 15);
+        for (let i = 1; i < s.n; i++) if (isNum(e[i]) && isNum(e[i - 1]) && e[i] < e[i - 1]) descent += e[i - 1] - e[i];
+        body += descent * DESCENT_PTS;
+      }
+    } else if (hrPts != null) {
+      body = hrPts * (IMPACT[family] ?? (runLike ? 1 : IMPACT.other));
+    }
+    return {
+      hr: hrPts == null ? null : Math.round(hrPts), body: body == null ? null : Math.round(body),
+      basis, descent: Math.round(descent), descentPts: Math.round(descent * DESCENT_PTS), nmPts: Math.round(nmPts),
+      version: LOAD_VERSION,
+    };
+  }
+
+  // Pace anchors from recent runs: cut each run into 3-minute blocks (after the first 5 min), keep the
+  // steady ones, regress heart rate (shifted 30 s for lag) on grade-adjusted speed, and read off the
+  // speed at the Easy and AP2 limits.
+  function fitPace(seriesList, z) {
+    if (!z || !isNum(z.easy) || !isNum(z.ap2)) return null;
+    let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0, runs = 0;
+    for (const raw of seriesList) {
+      if (!raw || !raw.t || !raw.hr || !(raw.gap || raw.v)) continue;
+      const s = prep(raw);
+      const vs = raw.gap && raw.gap.some(isNum) ? s.gap : s.v;
+      let used = false;
+      for (let b0 = 300; b0 + 180 <= s.t[s.n - 1]; b0 += 180) {
+        let vSum = 0, vSq = 0, vW = 0, hSum = 0, hW = 0;
+        for (let i = 0; i < s.n; i++) {
+          const t = s.t[i];
+          if (t >= b0 && t < b0 + 180 && isNum(vs[i])) { vSum += vs[i] * s.dt[i]; vSq += vs[i] * vs[i] * s.dt[i]; vW += s.dt[i]; }
+          if (t >= b0 + 30 && t < b0 + 210 && isNum(s.hr[i])) { hSum += s.hr[i] * s.dt[i]; hW += s.dt[i]; }
+        }
+        if (vW < 150 || hW < 150) continue;
+        const x = vSum / vW, y = hSum / hW, sd = Math.sqrt(Math.max(0, vSq / vW - x * x));
+        if (x < 2.2 || x > 6 || y < 110 || sd / x > 0.12) continue; // steady running only
+        n++; sx += x; sy += y; sxx += x * x; sxy += x * y; syy += y * y; used = true;
+      }
+      if (used) runs++;
+    }
+    if (n < 12 || runs < 3) return null;
+    const b = (n * sxy - sx * sy) / (n * sxx - sx * sx), a = (sy - b * sx) / n;
+    const r2 = ((n * sxy - sx * sy) ** 2) / ((n * sxx - sx * sx) * (n * syy - sy * sy));
+    if (!(b > 3)) return null; // heart rate must clearly rise with speed
+    const v_easy = (z.easy - a) / b, v_lt2 = (z.ap2 - a) / b;
+    if (!(v_easy > 1.5 && v_lt2 > v_easy && v_lt2 < 7)) return null;
+    return { v_easy: Math.round(v_easy * 1000) / 1000, v_lt2: Math.round(v_lt2 * 1000) / 1000, r2: Math.round(r2 * 100) / 100, n, runs, fitted_at: new Date().toISOString().slice(0, 10), auto: true };
+  }
+
+  const api = { analyse, load, fitPace, hrWeight, paceWeight, paceAnchors, calcKey, LOAD_VERSION, hrZone, zoneKey, ZONES, LABEL, SHORT, ORDER, ZONE_SPORTS, DEFAULT_NM, smooth, median };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.NdureLaps = api;
 })(typeof window !== "undefined" ? window : globalThis);

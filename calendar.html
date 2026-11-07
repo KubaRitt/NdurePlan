@@ -106,6 +106,8 @@
     .tizs span { display: inline-flex; align-items: center; gap: 4px; }
     .tizs i { width: 8px; height: 8px; border-radius: 2px; }
     .tizs .muted { color: var(--mute); }
+    .tizs .ld { width: 100%; color: var(--mute); }
+    .tizs .ld b { color: var(--text); font-weight: 650; }
     .nolink { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--faint); }
     .relink { margin-top: 8px; font-size: 12px; }
     .relink summary { cursor: pointer; color: var(--mute); list-style: none; display: inline-flex; align-items: center; gap: 4px; }
@@ -204,6 +206,7 @@
   <script src="config.js"></script>
   <script src="prompt.js"></script>
   <script src="laps.js"></script>
+  <script src="metrics.js"></script>
   <script>
     const sb = supabase.createClient(NDURE.url, NDURE.key);
     const $ = (id) => document.getElementById(id);
@@ -387,14 +390,30 @@
         <div class="kv">${kv.map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}<span class="go">Laps →</span></div>
       </a>`;
     }
+    // Saved track + watch laps straight from the database; only fetched from Garmin when not saved yet
+    async function savedActivity(id) {
+      const { data } = await sb.from("activity_streams").select("series, workout, laps").eq("activity_id", id).maybeSingle();
+      if (data && data.laps) return data;
+      return invoke("garmin", { action: "streams", activity_id: Number(id) });
+    }
+    // Save tracks + laps for every activity in a range that isn't saved yet (runs in ~45 s chunks)
+    async function saveTracks(from, to, setText) {
+      for (let k = 0; k < 40; k++) {
+        const r = await invoke("garmin", { action: "prefetch", from, to });
+        if (!r.remaining) return r.total;
+        setText(`Saving activities… ${r.total - r.remaining}/${r.total}`);
+      }
+    }
     const lapCache = new Map();
-    let zonesP = null;
+    const M = NdureMetrics(sb);
     async function lapsFor(id, fam) {
       if (lapCache.has(id)) return lapCache.get(id);
       const p = (async () => {
-        zonesP ??= sb.from("user_settings").select("zones").maybeSingle().then((r) => r.data?.zones || {});
-        const [zones, r] = await Promise.all([zonesP, invoke("garmin", { action: "streams", activity_id: Number(id) })]);
-        return NdureLaps.analyse(r.series, fam, zones, r.laps);
+        const [zones, saved] = await Promise.all([M.settings(), savedActivity(id)]);
+        const act = actById(id);
+        const res = NdureLaps.analyse(saved.series, fam, zones, saved.laps);
+        if (res && act) { res.ld = NdureLaps.load(res, fam, act.sport_key, zones); M.save([M.compute(act, saved, zones)]).catch(() => {}); }
+        return res;
       })().catch(() => null);
       lapCache.set(id, p);
       return p;
@@ -415,7 +434,8 @@
         const total = Object.values(r.tiz).reduce((x, y) => x + y, 0) || 1;
         const top = NdureLaps.ORDER.filter((z) => z !== "none" && r.tiz[z] >= 30).sort((x, y) => r.tiz[y] - r.tiz[x]).slice(0, 4);
         const tz = el.parentElement.querySelector(".tizs");
-        if (tz) tz.innerHTML = r.hasZones ? top.map((z) => `<span><i style="background:var(--z-${z})"></i>${NdureLaps.SHORT[z]} ${hm(r.tiz[z])}</span>`).join("") : `<span class="muted">Set zones in Settings to colour laps</span>`;
+        const loadTxt = r.ld && r.ld.hr != null ? `<span class="ld">Load <b>${r.ld.hr}</b> HR · <b>${r.ld.body ?? "–"}</b> body</span>` : "";
+        if (tz) tz.innerHTML = r.hasZones ? loadTxt + top.map((z) => `<span><i style="background:var(--z-${z})"></i>${NdureLaps.SHORT[z]} ${hm(r.tiz[z])}</span>`).join("") : loadTxt + `<span class="muted">Set zones in Settings to colour laps</span>`;
       });
     }
 
@@ -451,7 +471,8 @@
       $("sync").classList.add("busy"); $("sync").textContent = "Syncing…";
       try {
         const r = await invoke("garmin", { action: "sync", from: ymd(from), to: ymd(end) });
-        toast(`${r.activities} activities · ${r.health_days} days of HRV/sleep · ${r.linked} linked`);
+        await saveTracks(ymd(from), ymd(end), (t) => ($("sync").textContent = t));
+        toast(`${r.activities} activities saved · ${r.health_days} days of HRV/sleep · ${r.linked} linked`);
         await load();
       } catch (e) { toast(e.message, true); }
       $("sync").classList.remove("busy"); $("sync").textContent = "Sync Garmin";
@@ -491,6 +512,7 @@
           setBtn(`Syncing ${from.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}…`);
           try {
             const s = await invoke("garmin", { action: "sync", from: ymd(from), to: ymd(to) });
+            await saveTracks(ymd(from), ymd(to), setBtn);
             acts += s.activities; linked = null;
           } catch (e) { toast("Imported, but Garmin sync failed: " + e.message, true); break; }
           from = addDays(to, 1);

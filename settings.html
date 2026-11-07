@@ -86,6 +86,26 @@
       </div>
     </section>
 
+    <!-- PACE ANCHORS -->
+    <section class="card">
+      <div class="top"><h2>Running pace anchors · body load</h2><span class="pill" id="pace-pill">–</span></div>
+      <p class="help">Body load for running follows your pace the way HR load follows heart rate. The two anchors are the pace you hold at your <b>Easy</b> limit and at your <b>AP2</b> limit (≈ threshold). They're fitted from the last 30 days of steady running (grade-adjusted), or you can set your own.</p>
+      <div class="key-row" style="align-items:center">
+        <span id="pace-fit" style="flex:1 1 260px;font-size:13px;color:var(--text-2)"></span>
+        <button class="inline" id="refit">Refit from last 30 days</button>
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Use my own</th><th>Easy limit pace</th><th>AP2 limit pace</th></tr></thead>
+        <tbody><tr>
+          <td><input type="checkbox" id="pm-on" style="width:auto" aria-label="Use my own pace anchors"></td>
+          <td><input class="wide" id="pm-easy" placeholder="e.g. 5:10" aria-label="Easy limit pace"><span class="unit">/km</span></td>
+          <td><input class="wide" id="pm-lt2" placeholder="e.g. 3:55" aria-label="AP2 limit pace"><span class="unit">/km</span></td>
+        </tr></tbody>
+      </table></div>
+      <p class="help">HR load: points per minute shaped like a lactate curve, almost flat through Easy (1.0 at the Easy limit), 3.0 at the AP2 limit, then exponential. Body load adds 1 point per 10 m of descent. Strength/HIIT count 0.5 per minute (1 h ≈ 30 min easy running), yoga 0.1. Bike, ski and swim body load = HR load × 0.4 / 0.7 / 0.3. Saving zones recalculates all loads.</p>
+      <div class="msg" id="pace-msg"></div>
+    </section>
+
     <!-- NEUROMUSCULAR -->
     <section class="card">
       <h2><i class="sw" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--z-nm);margin-right:8px"></i>Neuromuscular</h2>
@@ -98,7 +118,7 @@
       </div>
       <div class="save-row">
         <span class="msg" id="save-msg"></span>
-        <button class="primary inline" id="save">Save zones</button>
+        <button class="primary inline" id="save">Save settings</button>
       </div>
     </section>
   </main>
@@ -107,6 +127,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="laps.js"></script>
+  <script src="metrics.js"></script>
   <script>
     const sb = supabase.createClient(NDURE.url, NDURE.key);
     const $ = (id) => document.getElementById(id);
@@ -196,6 +217,7 @@
       const out = {}; let bad = false;
       document.querySelectorAll("#zones tr").forEach((tr) => {
         const k = tr.dataset.k, z = {};
+        if (k === "run" && zones.run && zones.run.pace) z.pace = zones.run.pace;
         L.ZONES.forEach((zz) => { const i = tr.querySelector(`[data-z=${zz}]`); if (i.value !== "") z[zz] = Math.round(Number(i.value)); if (i.classList.contains("bad")) bad = true; });
         out[k] = z;
       });
@@ -207,7 +229,21 @@
         spEl.classList.toggle("bad", sp !== "" && !ms); if (sp !== "" && !ms) bad = true;
         out[k].nm_min_speed = ms ? Math.round(ms * 1000) / 1000 : null;
       });
+      // own pace anchors
+      const on = $("pm-on").checked, e = paceToMs($("pm-easy").value), l2 = paceToMs($("pm-lt2").value);
+      $("pm-easy").classList.toggle("bad", on && !e); $("pm-lt2").classList.toggle("bad", on && (!l2 || (e && l2 <= e)));
+      if (on && (!e || !l2 || l2 <= e)) bad = true;
+      out.run.pace_manual = on && e && l2 ? { v_easy: Math.round(e * 1000) / 1000, v_lt2: Math.round(l2 * 1000) / 1000 } : null;
       return bad ? null : out;
+    }
+
+    function renderPace() {
+      const p = zones.run && zones.run.pace, m = zones.run && zones.run.pace_manual;
+      $("pace-fit").innerHTML = p ? `Fitted: Easy limit <b>${msToPace(p.v_easy)}</b> /km · AP2 limit <b>${msToPace(p.v_lt2)}</b> /km <span style="color:var(--mute)">(${p.runs ?? "?"} runs, r² ${p.r2}, ${p.fitted_at})</span>` : `<span style="color:var(--mute)">Not fitted yet. Needs Run zones and at least 3 saved runs with steady stretches.</span>`;
+      $("pm-on").checked = !!m;
+      $("pm-easy").value = m ? msToPace(m.v_easy) : ""; $("pm-lt2").value = m ? msToPace(m.v_lt2) : "";
+      $("pace-pill").textContent = m ? "using your own" : p ? "fitted" : "not set";
+      $("pace-pill").className = "pill" + (m || p ? " ok" : "");
     }
 
     $("save").onclick = async () => {
@@ -217,7 +253,7 @@
       const { error } = await sb.from("user_settings").upsert({ user_id: me.id, zones: z, updated_at: new Date().toISOString() });
       $("save").disabled = false;
       if (error) return msg("save-msg", error.message, "err");
-      zones = z; msg("save-msg", "Saved. Laps use the new zones next time you open an activity.", "ok");
+      zones = z; renderPace(); msg("save-msg", "Saved. Laps and loads update the next time they're shown.", "ok");
     };
 
     $("logout").onclick = () => sb.auth.signOut();
@@ -229,7 +265,15 @@
       $("app").hidden = false;
       const { data: row } = await sb.from("user_settings").select("zones").maybeSingle();
       zones = row?.zones || {};
-      render(); refreshKey();
+      render(); renderPace(); refreshKey();
+      $("refit").onclick = async () => {
+        $("refit").disabled = true; msg("pace-msg", "Fitting from your saved runs…");
+        const r = await NdureMetrics(sb).refitPace();
+        $("refit").disabled = false;
+        if (!r.fit) return msg("pace-msg", `Couldn't fit from ${r.runs} runs. Sync Garmin first, set Run zones, and run a few steady stretches.`, "err");
+        const { data: row2 } = await sb.from("user_settings").select("zones").maybeSingle();
+        zones = row2?.zones || zones; renderPace(); msg("pace-msg", "Pace anchors updated.", "ok");
+      };
     })();
     sb.auth.onAuthStateChange((e) => { if (e === "SIGNED_OUT") location.replace("index.html"); });
   </script>

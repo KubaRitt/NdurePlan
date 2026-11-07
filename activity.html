@@ -41,6 +41,12 @@
     .legend i { width: 10px; height: 10px; border-radius: 2px; }
     .legend .hrl { width: 14px; height: 2px; border-radius: 1px; background: #18181b; }
 
+    /* load */
+    .loads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .loads div { background: var(--panel-2); border-radius: 6px; padding: 10px 12px; }
+    .loads b { display: block; font-size: 24px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .loads span { font-size: 11px; color: var(--mute); font-weight: 600; }
+    .lnote { font-size: 12px; color: var(--mute); margin: 8px 0 16px; line-height: 1.5; }
     /* time in zone */
     .tiz-bar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; gap: 2px; background: var(--panel-2); }
     .tiz-bar i { display: block; height: 100%; transform-origin: left; animation: grow .7s var(--spring) both; }
@@ -108,7 +114,7 @@
     </section>
 
     <div class="grid2">
-      <section class="panel"><h2><span>Time in zone</span><small id="tiz-sub"></small></h2><div id="tiz"></div></section>
+      <section class="panel"><h2><span>Load and time in zone</span><small id="tiz-sub"></small></h2><div id="load"></div><div id="tiz"></div></section>
       <section class="panel" id="side"></section>
     </div>
 
@@ -122,6 +128,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="laps.js"></script>
+  <script src="metrics.js"></script>
   <script>
     const sb = supabase.createClient(NDURE.url, NDURE.key);
     const $ = (id) => document.getElementById(id);
@@ -132,7 +139,8 @@
     const ZC = (z) => `var(--z-${z})`;
     const clock = (s) => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
     const km = (m) => (m == null ? "–" : m >= 995 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m");
-    let act = null, session = null, data = null, result = null, family = "other";
+    let act = null, session = null, data = null, result = null, family = "other", zones = {};
+    const M = NdureMetrics(sb);
 
     const INT = { warmup: "warm-up", cooldown: "cool-down", recovery: "recovery", rest: "rest", interval: "interval", other: "" };
     const paceUnit = () => (family === "run" || family === "walk" ? "pace" : family === "swim" ? "swim" : "speed");
@@ -163,9 +171,11 @@
       family = act.family || "other";
       header();
       try {
-        data = await invoke({ action: "streams", activity_id: Number(id), refresh: !!refresh });
+        const saved = refresh ? null : (await sb.from("activity_streams").select("series, workout, laps").eq("activity_id", id).maybeSingle()).data;
+        data = saved && saved.laps ? saved : await invoke({ action: "streams", activity_id: Number(id), refresh: !!refresh });
       } catch (e) { $("chart").innerHTML = `<div class="loading">${esc(e.message)}</div>`; return; }
-      result = L.analyse(data.series, family, z.data?.zones || {}, data.laps);
+      zones = z.data?.zones || {};
+      result = L.analyse(data.series, family, zones, data.laps);
       if (!result) { $("chart").innerHTML = '<div class="loading">Garmin has no detailed track for this activity.</div>'; return; }
       render();
     }
@@ -241,6 +251,25 @@
       svgEl.onmousemove = (e) => highlight(lapAt(e.clientX));
       svgEl.onmouseleave = () => highlight(-1);
       svgEl.ontouchstart = svgEl.ontouchmove = (e) => { highlight(lapAt(e.touches[0].clientX)); };
+
+      // ---- load ----
+      const ld = L.load(r, family, act.sport_key, zones);
+      M.save([M.compute(act, data, zones)]).catch(() => {});
+      const pz = L.paceAnchors(zones);
+      const parts = [];
+      if (ld.basis === "pace") {
+        if (ld.descentPts) parts.push(`${ld.descentPts} from ${ld.descent} m downhill`);
+        if (ld.nmPts) parts.push(`${ld.nmPts} from neuromuscular reps`);
+        parts.push("pace-based");
+      } else if (ld.basis === "impact") parts.push(family === "run" || family === "walk" ? "pace anchors not fitted yet, so = HR load" : `${family} · HR load × impact factor`);
+      else parts.push(ld.note);
+      const diff = ld.hr && ld.body ? ld.body / ld.hr : null;
+      const hint = diff == null ? "" : diff > 1.25 ? "Body load clearly above HR load: mechanically harder than your heart rate shows (sprints, downhill, fast running)." : diff < 0.8 ? "HR load clearly above body load: heart rate high for the pace (heat, fatigue, illness, hills at slow pace)." : "Body and HR load agree.";
+      $("load").innerHTML = `<div class="loads">
+          <div><b>${ld.hr ?? "–"}</b><span>HR load</span></div>
+          <div><b>${ld.body ?? "–"}</b><span>Body load</span></div>
+        </div>
+        <p class="lnote">${esc(parts.join(" · "))}${hint ? `<br>${hint}` : ""}${!r.hasZones ? '<br><a href="settings.html">Set zones in Settings</a> to calculate load.' : ""}</p>`;
 
       // ---- time in zone ----
       const total = Object.values(r.tiz).reduce((a, b) => a + b, 0) || 1;

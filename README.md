@@ -7,7 +7,8 @@ dashboard.html 7 / 14 / 28-day distance and time per sport
 prompt.js     the diary → JSON prompt shown in the app
 settings.html Garmin key, heart-rate zones (Easy/AP1/AP2/AP3) per sport, neuromuscular rule
 activity.html one activity: lap chart coloured by zone, time in zone, lap list
-laps.js       lap engine: classifies the watch laps (or detects laps when there's no file)
+laps.js       lap engine + load model (HR load, body load, pace-anchor fitting)
+metrics.js    saves per-activity load results in activity_metrics, recalculates when settings change
 garmin.html   redirects to settings.html
 config.js     Supabase URL + publishable key (safe to ship)
 style.css
@@ -96,3 +97,26 @@ linked to one, so nothing is counted twice. **Sync last 28 days** refreshes Garm
 - **Neuromuscular**: a lap no longer than the rep length (default 30 s) and faster than the minimum speed
   (or 30 % faster than the session's typical speed). **Rest**: rest laps, recovery laps up to 3 min, or standing.
 - If the watch file can't be read, laps are detected from the track instead and the page says so.
+
+## Saved activities
+
+Sync (calendar / dashboard) and diary import also save every new activity's track and watch laps in
+`activity_streams` (`garmin` function, `action: "prefetch"`, ~45 s per call, repeated until done).
+Pages read saved activities straight from the database; Garmin is only asked when one isn't saved yet.
+
+## Load
+
+Two numbers per activity, both "points per minute" on the same scale (an easy hour ≈ 55–60):
+
+- **HR load** follows a lactate-shaped curve of heart rate: `w = 0.8 + 0.2·e^(ln11·(HR − Easy)/(AP2 − Easy))`,
+  so 1.0 at your Easy limit, 3.0 at your AP2 limit, exponential above, capped at 10/min. Below 100 bpm
+  nothing counts; it ramps in up to 130 bpm.
+- **Body load** (running) uses the same curve on grade-adjusted pace, anchored at the pace you hold at your
+  Easy and AP2 limits (fitted from 3-min steady blocks of the last 30 days, or your own in Settings),
+  plus 0.1 per metre of descent. Neuromuscular reps count through their pace.
+- Strength / HIIT: 0.5 per minute (1 h ≈ 30 min easy running). Yoga / mobility: 0.1.
+  Bike / ski / swim body load = HR load × 0.4 / 0.7 / 0.3.
+- Results are stored in `activity_metrics` with a `calc_key`; when zones or pace anchors change they're
+  recalculated the next time they're shown.
+- Dashboard: last 7 days vs 28-day weekly average and their ratio (< 0.8 low, ≤ 1.3 steady, ≤ 1.5 rising,
+  above = spike), plus daily HR and body load for 28 days.
