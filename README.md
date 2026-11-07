@@ -3,12 +3,14 @@
 ```
 index.html    sign in / create account / Google
 calendar.html calendar: diary + Garmin, day detail, import, sync, relink
+dashboard.html 7 / 14 / 28-day distance and time per sport
+prompt.js     the diary → JSON prompt shown in the app
 garmin.html   Garmin Personal API test page (signed-in only)
 config.js     Supabase URL + publishable key (safe to ship)
 style.css
 vercel.json   static hosting headers
 supabase/functions/garmin/index.ts   Garmin: key, token, test GET, sync (deployed)
-supabase/functions/diary/index.ts    diary import: JSON or scanned template (deployed)
+supabase/functions/diary/index.ts    diary import from the prompt's JSON (deployed)
 supabase/functions/_shared/match.ts  sport families + session ↔ activity matching
 templates/
   ndure-training-day.pdf    1 day, A4 portrait
@@ -64,9 +66,15 @@ Then add the Vercel URL in Supabase → Authentication → URL Configuration
 ## Calendar
 
 - **Sync Garmin** pulls the visible month: activities, HRV, resting HR and sleep.
-- **Import diary** takes the JSON from `templates/diary-to-json-prompt.md`, or a PDF / photo of a filled
-  template. Scans are read with Claude and need an `ANTHROPIC_API_KEY` edge function secret
-  (Supabase → Edge Functions → Secrets).
+- **Prompt** shows the diary → JSON prompt with a copy button. Paste it into an AI with photos of your diary
+  and save what it returns as a `.json` file.
+- **Import diary** accepts only that `.json` file, then syncs Garmin for the imported dates automatically.
 - Each diary session is linked to the best Garmin activity that day (same sport family, then start time,
   duration, distance, then written order). Change a link in the day panel; your manual links are kept on re-sync.
 - Tables: `days`, `diary_sessions`, `garmin_activities` (row-level security: your rows only).
+
+## Dashboard
+
+Rolling 7, 14 and 28 days ending today: distance (time for sports without distance) per sport, totals,
+km per week, and the last four 7-day blocks. Counts Garmin activities plus diary sessions that aren't
+linked to one, so nothing is counted twice. **Sync last 28 days** refreshes Garmin first.

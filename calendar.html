@@ -99,6 +99,12 @@
     .toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
     .toast.err { background: var(--danger); }
     .busy { opacity: .6; pointer-events: none; }
+    dialog { border: 1px solid var(--line); border-radius: 12px; padding: 0; width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.18); }
+    dialog[open] { animation: rise .4s var(--spring) both; }
+    dialog::backdrop { background: rgba(24,24,27,.35); }
+    .dlg-in { padding: 20px; }
+    .steps { margin: 12px 0 0; padding-left: 20px; color: var(--text-2); font-size: 13px; display: grid; gap: 4px; }
+    #prompt-text { max-height: 46vh; font-size: 11.5px; }
   </style>
 </head>
 <body>
@@ -106,7 +112,7 @@
     <div class="in">
       <div style="display:flex;align-items:center">
         <a class="brand" href="calendar.html"><i></i>Ndure</a>
-        <nav><a class="on" href="calendar.html">Calendar</a><a href="garmin.html">Garmin</a></nav>
+        <nav><a class="on" href="calendar.html">Calendar</a><a href="dashboard.html">Dashboard</a><a href="garmin.html">Garmin</a></nav>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
         <span class="who" id="who"></span>
@@ -142,8 +148,9 @@
         <div class="acts">
           <button class="inline" id="today">Today</button>
           <button class="inline" id="sync">Sync Garmin</button>
+          <button class="inline" id="prompt">Prompt</button>
           <button class="inline primary" id="import">Import diary</button>
-          <input type="file" id="file" accept=".json,application/json,application/pdf,image/png,image/jpeg,image/webp" hidden>
+          <input type="file" id="file" accept=".json,application/json" hidden>
         </div>
       </div>
       <div class="tl" id="tl"></div>
@@ -153,10 +160,27 @@
     <section class="panel detail" id="detail"></section>
   </main>
 
+  <dialog id="prompt-dlg" aria-labelledby="prompt-title">
+    <div class="dlg-in">
+      <div class="top"><h2 id="prompt-title" style="margin:0">Diary → JSON prompt</h2><button class="inline ghost" id="prompt-close" aria-label="Close">✕</button></div>
+      <ol class="steps">
+        <li>Copy the prompt and paste it into Claude (or another AI) with photos or scans of your diary pages.</li>
+        <li>Download the <b>diary.json</b> it gives you. If it only shows a code block, save that text as a .json file.</li>
+        <li>Press <b>Import diary</b> and choose the file. Garmin syncs for those dates and sessions link automatically.</li>
+      </ol>
+      <pre id="prompt-text"></pre>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="prompt-copy">Copy prompt</button>
+        <button id="prompt-import">Import diary…</button>
+      </div>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="prompt.js"></script>
   <script>
     const sb = supabase.createClient(NDURE.url, NDURE.key);
     const $ = (id) => document.getElementById(id);
@@ -360,31 +384,54 @@
       $("sync").classList.remove("busy"); $("sync").textContent = "Sync Garmin";
     };
 
+    // Prompt dialog
+    $("prompt-text").textContent = window.NDURE_PROMPT;
+    $("prompt").onclick = () => $("prompt-dlg").showModal();
+    $("prompt-close").onclick = () => $("prompt-dlg").close();
+    $("prompt-copy").onclick = async () => {
+      try { await navigator.clipboard.writeText(window.NDURE_PROMPT); $("prompt-copy").textContent = "Copied"; }
+      catch { const r = document.createRange(); r.selectNodeContents($("prompt-text")); getSelection().removeAllRanges(); getSelection().addRange(r); $("prompt-copy").textContent = "Selected – press Ctrl+C"; }
+      setTimeout(() => ($("prompt-copy").textContent = "Copy prompt"), 2000);
+    };
+    $("prompt-import").onclick = () => { $("prompt-dlg").close(); $("file").click(); };
+
+    // Import: JSON from the prompt only, then sync Garmin for the imported dates
     $("import").onclick = () => $("file").click();
     $("file").onchange = async () => {
       const f = $("file").files[0]; $("file").value = "";
       if (!f) return;
-      $("import").classList.add("busy"); $("import").textContent = f.type.includes("json") || f.name.endsWith(".json") ? "Importing…" : "Reading scan…";
+      if (!/\.json$/i.test(f.name) && !f.type.includes("json")) return toast("Choose the .json file the prompt gave you", true);
+      const setBtn = (t) => ($("import").textContent = t);
+      $("import").classList.add("busy"); setBtn("Importing…");
       try {
-        let body;
-        if (f.type.includes("json") || f.name.endsWith(".json")) body = { diary: JSON.parse(await f.text()) };
-        else if (f.type === "application/pdf") body = { file: await b64(f), media_type: "application/pdf" };
-        else body = { file: await shrink(f), media_type: "image/jpeg" };
-        const r = await invoke("diary", body);
-        toast(`${r.days} days · ${r.sessions} sessions · ${r.linked} linked to Garmin`);
-        if (r.from) { const d = parse(r.from); sel = d; view = new Date(d.getFullYear(), d.getMonth(), 1); }
+        let text = (await f.text()).trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+        let diary;
+        try { diary = JSON.parse(text); } catch { throw new Error("That file isn't valid JSON. Ask the AI to return only the JSON."); }
+        if (!Array.isArray(diary?.days)) throw new Error('The JSON has no "days" list. Use the prompt from the Prompt button.');
+        const r = await invoke("diary", { diary });
+
+        // Pull Garmin for the imported range (max 62 days per call, never past today)
+        let acts = 0, linked = r.linked, from = parse(r.from);
+        const last = parse(r.to) > today ? today : parse(r.to);
+        while (from <= last) {
+          const to = new Date(Math.min(+addDays(from, 61), +last));
+          setBtn(`Syncing ${from.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}…`);
+          try {
+            const s = await invoke("garmin", { action: "sync", from: ymd(from), to: ymd(to) });
+            acts += s.activities; linked = null;
+          } catch (e) { toast("Imported, but Garmin sync failed: " + e.message, true); break; }
+          from = addDays(to, 1);
+        }
+        if (linked === null) { // count links after sync
+          const { count } = await sb.from("diary_sessions").select("id", { count: "exact", head: true }).gte("date", r.from).lte("date", r.to).not("activity_id", "is", null);
+          linked = count ?? 0;
+        }
+        toast(`${r.days} days · ${r.sessions} sessions · ${acts} Garmin activities · ${linked} linked`);
+        const d = parse(r.from); sel = d; view = new Date(d.getFullYear(), d.getMonth(), 1);
         await load(); scrollToSel();
       } catch (e) { toast(e.message, true); }
-      $("import").classList.remove("busy"); $("import").textContent = "Import diary";
+      $("import").classList.remove("busy"); setBtn("Import diary");
     };
-    const b64 = (f) => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = no; r.readAsDataURL(f); });
-    async function shrink(f) { // photos → JPEG, max 2400 px on the long edge
-      const img = await createImageBitmap(f);
-      const s = Math.min(1, 2400 / Math.max(img.width, img.height));
-      const c = document.createElement("canvas"); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
-      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      return c.toDataURL("image/jpeg", 0.88).split(",")[1];
-    }
 
     $("prev").onclick = () => { view = new Date(view.getFullYear(), view.getMonth() - 1, 1); sel = new Date(view); load(); };
     $("next").onclick = () => { view = new Date(view.getFullYear(), view.getMonth() + 1, 1); sel = new Date(view); load(); };

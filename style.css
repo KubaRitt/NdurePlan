@@ -96,4 +96,11 @@ pre {
 .appbar nav a:hover { color: var(--text); background: var(--panel-2); }
 .appbar nav a.on { color: var(--text); background: var(--panel-2); font-weight: 650; }
 .appbar .who { font-size: 12px; color: var(--text-2); font-weight: 550; }
-@media (max-width: 640px) { .appbar .who { display: none; } .appbar nav { margin-left: 8px; } }
+.appbar button { white-space: nowrap; }
+@media (max-width: 640px) {
+  .appbar .who { display: none; }
+  .appbar .in { padding: 0 8px 0 12px; gap: 4px; }
+  .appbar nav { margin-left: 6px; }
+  .appbar nav a { padding: 6px 7px; }
+  .appbar button { padding: 8px 6px; }
+}

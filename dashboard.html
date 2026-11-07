@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ndure · Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .page { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+    .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .head h1 { margin: 0; font-size: 22px; }
+    .head p { margin: 2px 0 0; color: var(--mute); font-size: 13px; }
+    .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 640px) { .kpis { grid-template-columns: 1fr; } }
+    .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; animation: rise .45s var(--spring) both; }
+    .kpi:nth-child(2) { animation-delay: .05s; } .kpi:nth-child(3) { animation-delay: .1s; }
+    .kpi .lbl { font-size: 12px; font-weight: 650; color: var(--mute); }
+    .kpi .big { font-size: 30px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 4px; }
+    .kpi .big small { font-size: 14px; font-weight: 600; color: var(--mute); letter-spacing: 0; }
+    .kpi .sub { font-size: 12px; color: var(--mute); margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .stack { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--panel-2); margin-top: 12px; gap: 2px; }
+    .stack i { display: block; height: 100%; transform-origin: left; animation: grow .7s var(--spring) both; }
+    @keyframes grow { from { transform: scaleX(0); } }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-top: 16px; }
+    .panel h2 { margin: 0 0 12px; font-size: 13px; }
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 520px; }
+    th { text-align: right; font-size: 11px; font-weight: 700; color: var(--mute); text-transform: uppercase; letter-spacing: .04em; padding: 0 10px 8px; border-bottom: 1px solid var(--line); }
+    th:first-child, td:first-child { text-align: left; padding-left: 0; }
+    td { text-align: right; padding: 10px; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
+    tr:last-child td { border-bottom: 0; }
+    td .s { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    td .s i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+    td b { font-weight: 650; }
+    td small { display: block; color: var(--mute); font-size: 11px; }
+    td.bar { width: 28%; min-width: 120px; }
+    td.bar span { display: block; height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+    td.bar span i { display: block; height: 100%; border-radius: 3px; transform-origin: left; animation: grow .7s var(--spring) both; }
+    tfoot td { font-weight: 700; border-top: 1px solid var(--line); border-bottom: 0; }
+    .weeks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: end; height: 180px; padding-top: 8px; }
+    .wk { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+    .wk .col { width: min(56px, 100%); display: flex; flex-direction: column-reverse; border-radius: 4px; overflow: hidden; background: var(--panel-2); transform-origin: bottom; animation: rise-y .7s var(--spring) both; }
+    @keyframes rise-y { from { transform: scaleY(0); } }
+    .wk .col i { display: block; }
+    .wk b { font-size: 13px; font-variant-numeric: tabular-nums; }
+    .wk span { font-size: 11px; color: var(--mute); }
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin-top: 12px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 8px; height: 8px; border-radius: 2px; }
+    .empty { color: var(--mute); font-size: 13px; padding: 24px 0; text-align: center; }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--text); color: #fff; font-size: 13px; font-weight: 550; padding: 10px 16px; border-radius: 10px; transition: transform .4s var(--spring), opacity .2s; z-index: 60; max-width: calc(100vw - 32px); }
+    .toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .toast.err { background: var(--danger); }
+    .busy { opacity: .6; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <header class="appbar">
+    <div class="in">
+      <div style="display:flex;align-items:center">
+        <a class="brand" href="calendar.html"><i></i>Ndure</a>
+        <nav><a href="calendar.html">Calendar</a><a class="on" href="dashboard.html">Dashboard</a><a href="garmin.html">Garmin</a></nav>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="who" id="who"></span>
+        <button class="inline ghost" id="logout">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page" id="app" hidden>
+    <div class="head">
+      <div><h1>Dashboard</h1><p id="range"></p></div>
+      <button class="inline" id="sync">Sync last 28 days</button>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="panel">
+      <h2>Distance per sport</h2>
+      <div class="tbl-wrap"><table id="tbl"></table></div>
+    </div>
+    <div class="panel">
+      <h2>Last 4 weeks · km</h2>
+      <div class="weeks" id="weeks"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script>
+    const sb = supabase.createClient(NDURE.url, NDURE.key);
+    const $ = (id) => document.getElementById(id);
+    const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    const hm = (s) => { s = Math.round((s || 0) / 60); return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} h` : `${s} min`; };
+    const kmf = (m) => (m / 1000).toFixed(1);
+    const FAM = [["run", "Run"], ["bike", "Bike"], ["swim", "Swim"], ["ski", "Ski"], ["walk", "Walk"], ["strength", "Strength"], ["other", "Other"]];
+    const color = (f) => `var(--${f})`;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const WIN = [7, 14, 28];
+    let items = [];
+
+    function toast(t, err) {
+      const el = $("toast"); el.textContent = t; el.className = "toast on" + (err ? " err" : "");
+      clearTimeout(toast.t); toast.t = setTimeout(() => (el.className = "toast"), err ? 6000 : 3500);
+    }
+
+    async function load() {
+      const from = ymd(addDays(today, -27)), to = ymd(today);
+      $("range").textContent = `${addDays(today, -27).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${today.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · rolling windows ending today`;
+      const [a, s] = await Promise.all([
+        sb.from("garmin_activities").select("activity_id,date,family,duration_s,distance_m").gte("date", from).lte("date", to),
+        sb.from("diary_sessions").select("date,family,duration_min,distance_km,activity_id").gte("date", from).lte("date", to).is("activity_id", null),
+      ]);
+      if (a.error || s.error) toast((a.error || s.error).message, true);
+      // Garmin activities, plus diary-only sessions (not linked) so nothing is counted twice
+      items = [
+        ...(a.data ?? []).map((x) => ({ date: x.date, f: x.family || "other", m: Number(x.distance_m) || 0, t: x.duration_s || 0 })),
+        ...(s.data ?? []).map((x) => ({ date: x.date, f: x.family || "other", m: (Number(x.distance_km) || 0) * 1000, t: (Number(x.duration_min) || 0) * 60 })),
+      ].filter((x) => x.m > 0 || x.t > 0);
+      render();
+    }
+
+    const inWin = (x, n) => x.date >= ymd(addDays(today, -(n - 1)));
+    function sum(list) { return list.reduce((o, x) => ({ m: o.m + x.m, t: o.t + x.t, n: o.n + 1 }), { m: 0, t: 0, n: 0 }); }
+
+    function render() {
+      // KPI cards: total distance per window + stacked sport share
+      $("kpis").innerHTML = WIN.map((n) => {
+        const list = items.filter((x) => inWin(x, n)), tot = sum(list);
+        const parts = FAM.map(([f]) => [f, sum(list.filter((x) => x.f === f)).m]).filter(([, m]) => m > 0);
+        return `<div class="kpi"><div class="lbl">Last ${n} days</div>
+          <div class="big">${kmf(tot.m)} <small>km</small></div>
+          <div class="sub">${hm(tot.t)} · ${tot.n} sessions · ${kmf((tot.m / n) * 7)} km / week</div>
+          <div class="stack">${parts.map(([f, m]) => `<i style="width:${(100 * m) / tot.m}%;background:${color(f)}" title="${f}"></i>`).join("")}</div></div>`;
+      }).join("");
+
+      // Table: per sport, km (or time when the sport has no distance)
+      const rows = FAM.map(([f, label]) => {
+        const w = WIN.map((n) => sum(items.filter((x) => x.f === f && inWin(x, n))));
+        return { f, label, w, dist: w[2].m > 0 };
+      }).filter((r) => r.w[2].n > 0);
+      const maxKm = Math.max(1, ...rows.map((r) => r.w[2].m));
+      if (!rows.length) {
+        $("tbl").innerHTML = `<tbody><tr><td class="empty" colspan="5">No activities in the last 28 days yet. Press Sync last 28 days.</td></tr></tbody>`;
+      } else {
+        const cell = (r, x) => r.dist ? `<b>${kmf(x.m)}</b> km<small>${hm(x.t)} · ${x.n}×</small>` : `<b>${hm(x.t)}</b><small>${x.n}×</small>`;
+        const tot = WIN.map((n) => sum(items.filter((x) => inWin(x, n))));
+        $("tbl").innerHTML = `<thead><tr><th>Sport</th><th>7 days</th><th>14 days</th><th>28 days</th><th>28-day share</th></tr></thead>
+          <tbody>${rows.map((r) => `<tr><td><span class="s"><i style="background:${color(r.f)}"></i>${r.label}</span></td>
+            ${r.w.map((x) => `<td>${cell(r, x)}</td>`).join("")}
+            <td class="bar"><span><i style="width:${r.dist ? (100 * r.w[2].m) / maxKm : 0}%;background:${color(r.f)}"></i></span></td></tr>`).join("")}</tbody>
+          <tfoot><tr><td>All</td>${tot.map((x) => `<td><b>${kmf(x.m)}</b> km<small>${hm(x.t)}</small></td>`).join("")}<td></td></tr></tfoot>`;
+      }
+
+      // Last 4 weeks (rolling 7-day blocks ending today), stacked km by sport
+      const blocks = [3, 2, 1, 0].map((k) => {
+        const end = addDays(today, -7 * k), start = addDays(end, -6);
+        const list = items.filter((x) => x.date >= ymd(start) && x.date <= ymd(end));
+        return { start, end, list, m: sum(list).m };
+      });
+      const maxW = Math.max(1, ...blocks.map((b) => b.m));
+      $("weeks").innerHTML = blocks.map((b, i) => {
+        const parts = FAM.map(([f]) => [f, sum(b.list.filter((x) => x.f === f)).m]).filter(([, m]) => m > 0);
+        return `<div class="wk"><b>${kmf(b.m)}</b>
+          <div class="col" style="height:${Math.max(4, (140 * b.m) / maxW)}px;animation-delay:${i * 0.05}s">${parts.map(([f, m]) => `<i style="height:${(100 * m) / b.m}%;background:${color(f)}"></i>`).join("")}</div>
+          <span>${b.start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}–${b.end.toLocaleDateString("en-GB", { day: "numeric" })}</span></div>`;
+      }).join("");
+      const used = new Set(items.filter((x) => x.m > 0).map((x) => x.f));
+      $("legend").innerHTML = FAM.filter(([f]) => used.has(f)).map(([f, l]) => `<span><i style="background:${color(f)}"></i>${l}</span>`).join("");
+    }
+
+    $("sync").onclick = async () => {
+      $("sync").classList.add("busy"); $("sync").textContent = "Syncing…";
+      try {
+        const { data, error } = await sb.functions.invoke("garmin", { body: { action: "sync", from: ymd(addDays(today, -27)), to: ymd(today) } });
+        if (error) { let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch {} throw new Error(m); }
+        toast(`${data.activities} activities synced · ${data.linked} diary sessions linked`);
+        await load();
+      } catch (e) { toast(e.message, true); }
+      $("sync").classList.remove("busy"); $("sync").textContent = "Sync last 28 days";
+    };
+    $("logout").onclick = () => sb.auth.signOut();
+
+    (async () => {
+      const { data } = await sb.auth.getSession();
+      if (!data.session) return location.replace("index.html");
+      $("who").textContent = data.session.user.email;
+      $("app").hidden = false;
+      load();
+    })();
+    sb.auth.onAuthStateChange((e) => { if (e === "SIGNED_OUT") location.replace("index.html"); });
+  </script>
+</body>
+</html>
