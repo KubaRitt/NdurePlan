@@ -7,7 +7,7 @@ dashboard.html 7 / 14 / 28-day distance and time per sport
 prompt.js     the diary → JSON prompt shown in the app
 settings.html Garmin key, heart-rate zones (Easy/AP1/AP2/AP3) per sport, neuromuscular rule
 activity.html one activity: lap chart coloured by zone, time in zone, lap list
-laps.js       lap engine: splits the Garmin track into laps and classifies them
+laps.js       lap engine: classifies the watch laps (or detects laps when there's no file)
 garmin.html   redirects to settings.html
 config.js     Supabase URL + publishable key (safe to ship)
 style.css
@@ -84,13 +84,15 @@ linked to one, so nothing is counted twice. **Sync last 28 days** refreshes Garm
 
 ## Laps and zones
 
-Garmin's personal API has no lap list, so `activity.html` asks the `garmin` function for the
-second-by-second track (`action: "streams"`, cached in `activity_streams`) and `laps.js` builds the laps:
+`activity.html` asks the `garmin` function for the activity (`action: "streams"`, cached in `activity_streams`):
 
-- **Efforts**: stretches clearly faster than the session's typical speed (power on a bike).
-- **Between efforts**: running / walking / standing are split apart; steady running becomes 1 km laps
-  (ski 2 km, bike 5 km, no distance: 5 min).
+- **Laps come from the watch.** The function downloads the activity file
+  (`/download-service/files/activity/{id}` with `Accept: application/x-zip-compressed`), unzips it and reads the
+  lap records with Garmin's FIT SDK (`supabase/functions/_shared/fitlaps.ts`). So you see exactly your lap
+  presses, workout steps or auto-laps.
+- The second-by-second track is used for the chart, the heart-rate line, time in zone and lap pace
+  (speed sensor, because GPS distance lags on short reps).
 - **Zone per lap**: average heart rate against your limits in Settings.
-- **Neuromuscular**: an effort no longer than the rep length (default 30 s) and faster than the optional
-  minimum speed. **Rest**: standing, or a walk of up to 3 min right after an effort.
-- **Time in zone**: heart rate per second, except neuromuscular reps count as NM.
+- **Neuromuscular**: a lap no longer than the rep length (default 30 s) and faster than the minimum speed
+  (or 30 % faster than the session's typical speed). **Rest**: rest laps, recovery laps up to 3 min, or standing.
+- If the watch file can't be read, laps are detected from the track instead and the page says so.

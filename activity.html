@@ -69,6 +69,7 @@
     tbody tr:hover, tbody tr.hi { background: var(--panel-2); }
     .zp { display: inline-block; font-size: 11px; font-weight: 700; color: #18181b; border-radius: 4px; padding: 1px 7px; min-width: 44px; text-align: center; }
     td.fast { font-weight: 700; }
+    .it { font-size: 11px; color: var(--mute); margin-left: 8px; }
     .muted { color: var(--faint); }
     .loading { color: var(--mute); font-size: 13px; padding: 40px 0; text-align: center; }
     .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--text); color: #fff; font-size: 13px; font-weight: 550; padding: 10px 16px; border-radius: 10px; transition: transform .4s var(--spring), opacity .2s; z-index: 60; max-width: calc(100vw - 32px); }
@@ -133,6 +134,7 @@
     const km = (m) => (m == null ? "–" : m >= 995 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m");
     let act = null, session = null, data = null, result = null, family = "other";
 
+    const INT = { warmup: "warm-up", cooldown: "cool-down", recovery: "recovery", rest: "rest", interval: "interval", other: "" };
     const paceUnit = () => (family === "run" || family === "walk" ? "pace" : family === "swim" ? "swim" : "speed");
     function fmtSpeed(v) {
       if (!v || v < 0.3) return "–";
@@ -163,7 +165,7 @@
       try {
         data = await invoke({ action: "streams", activity_id: Number(id), refresh: !!refresh });
       } catch (e) { $("chart").innerHTML = `<div class="loading">${esc(e.message)}</div>`; return; }
-      result = L.analyse(data.series, family, z.data?.zones || {});
+      result = L.analyse(data.series, family, z.data?.zones || {}, data.laps);
       if (!result) { $("chart").innerHTML = '<div class="loading">Garmin has no detailed track for this activity.</div>'; return; }
       render();
     }
@@ -185,7 +187,9 @@
       const r = result, laps = r.laps, s = r.s;
       const sportName = L.ZONE_SPORTS.find(([k]) => k === r.zoneKey)?.[1] || "Other";
       $("banner").innerHTML = r.hasZones ? "" : `<div class="banner"><span>No ${sportName} heart-rate zones yet, so laps aren't coloured.</span><a href="settings.html">Set zones in Settings →</a></div>`;
-      $("chart-sub").textContent = `${laps.length} laps${r.counts.reps ? ` · ${r.counts.reps} neuromuscular reps` : ""} · bar height = ${r.hasSpeed ? "speed" : "heart rate"}`;
+      $("chart-sub").textContent = `${laps.length} ${r.source === "watch" ? "laps from your watch" : "laps detected from the track"}${r.counts.reps ? ` · ${r.counts.reps} neuromuscular reps` : ""} · bar height = ${r.hasSpeed ? "speed" : "heart rate"}`;
+      if (r.source !== "watch") $("banner").insertAdjacentHTML("beforeend", `<div class="banner"><span>Couldn't read the laps from the watch file${data.laps_error ? ` (${esc(data.laps_error)})` : ""}, so laps were detected from the track.</span><a href="#" id="retry">Try again</a></div>`);
+      document.getElementById("retry")?.addEventListener("click", (e) => { e.preventDefault(); $("reload").click(); });
 
       // ---- MyWhoosh-style block chart ----
       const W = 1000, H = 280, T = laps[laps.length - 1].t1 - laps[0].t0, t0 = laps[0].t0;
@@ -230,7 +234,7 @@
         document.querySelectorAll("#laps tbody tr").forEach((tr) => tr.classList.toggle("hi", +tr.dataset.k === k));
         if (k < 0) { tip.className = "tip"; return; }
         const l = laps[k], b = svgEl.getBoundingClientRect(), cx = ((x(l.t0) + x(l.t1)) / 2 / W) * b.width;
-        tip.innerHTML = `<b>Lap ${l.n} · ${l.label}</b>${clock(l.dur)} · ${km(l.dist)}<br>${fmtSpeed(l.speed)}<br><span>HR</span> ${l.hr ?? "–"} <span>/ max</span> ${l.hrMax ?? "–"}${l.power ? ` <span>· W</span> ${l.power}` : ""}`;
+        tip.innerHTML = `<b>Lap ${l.n} · ${l.label}${l.intensity && l.intensity !== "active" && INT[l.intensity] ? ` · ${INT[l.intensity]}` : ""}</b>${clock(l.dur)} · ${km(l.dist)}<br>${fmtSpeed(l.speed)}<br><span>HR</span> ${l.hr ?? "–"} <span>/ max</span> ${l.hrMax ?? "–"}${l.power ? ` <span>· W</span> ${l.power}` : ""}`;
         tip.style.left = Math.min(Math.max(cx - 80, 0), b.width - 170) + "px";
         tip.className = "tip on";
       };
@@ -265,7 +269,7 @@
       $("laps-sub").textContent = r.hasSpeed ? "pace from the speed sensor" : "";
       $("laps").innerHTML = `<thead><tr><th>#</th><th>Zone</th><th>Start</th><th>Time</th><th>Distance</th><th>${paceUnit() === "speed" ? "Speed" : "Pace"}</th><th>Avg HR</th><th>Max HR</th>${pw ? "<th>Power</th>" : ""}</tr></thead>
         <tbody>${laps.map((l, k) => `<tr data-k="${k}">
-          <td>${l.n}</td><td><span class="zp" style="background:${ZC(l.zone)}">${L.SHORT[l.zone]}</span></td>
+          <td>${l.n}</td><td><span class="zp" style="background:${ZC(l.zone)}">${L.SHORT[l.zone]}</span>${l.intensity && l.intensity !== "active" ? `<span class="it">${esc(INT[l.intensity] || l.intensity)}</span>` : ""}</td>
           <td>${clock(l.t0)}</td><td>${clock(l.dur)}</td><td>${km(l.dist)}</td>
           <td class="${l.fast ? "fast" : ""}">${fmtSpeed(l.speed)}</td><td>${l.hr ?? "–"}</td><td>${l.hrMax ?? "–"}</td>${pw ? `<td>${l.power ?? "–"}</td>` : ""}</tr>`).join("")}</tbody>`;
       document.querySelectorAll("#laps tbody tr").forEach((tr) => { tr.onmouseenter = () => highlight(+tr.dataset.k); tr.onmouseleave = () => highlight(-1); });

@@ -155,13 +155,47 @@
     return { segs: out.filter((g) => g.i1 > g.i0), hasSpeed, hasPower };
   }
 
+  // ---- watch laps (from the activity's .FIT file) -------------------------
+  function fromWatch(s, family, fitLaps, z, nm) {
+    const hasSpeed = !!s.v && s.v.filter((x) => isNum(x) && x > 0.3).length > s.n * 0.3;
+    const hasPower = !!s.p && s.p.filter((x) => isNum(x) && x > 0).length > s.n * 0.3;
+    const idxAt = (t) => { let lo = 0, hi = s.n; while (lo < hi) { const m = (lo + hi) >> 1; if (s.t[m] < t) lo = m + 1; else hi = m; } return lo; };
+    const typical = median((s.v || []).filter((x) => isNum(x) && x > 0.5));
+    const laps = fitLaps.map((f, k) => {
+      const i0 = Math.min(idxAt(f.t0), s.n), i1 = Math.max(i0, Math.min(idxAt(f.t0 + f.dur), s.n));
+      // speed sensor over the lap window (GPS distance lags on short reps); fall back to the watch's average
+      let vSum = 0, vW = 0;
+      if (hasSpeed) for (let i = i0; i < i1; i++) if (isNum(s.v[i])) { vSum += s.v[i] * s.dt[i]; vW += s.dt[i]; }
+      return {
+        n: k + 1, kind: "watch", intensity: f.intensity, trigger: f.trigger, i0, i1,
+        t0: f.t0, t1: f.t0 + f.dur, dur: f.dur, dist: f.dist,
+        speed: vW > f.dur * 0.5 ? vSum / vW : f.speed, hr: f.hr, hrMax: f.hrMax, power: f.power,
+      };
+    });
+    laps.forEach((l) => {
+      const fast = isNum(nm.nm_min_speed) ? (l.speed ?? 0) >= nm.nm_min_speed : typical ? (l.speed ?? 0) >= typical * 1.3 : false;
+      const easyIntensity = l.intensity === "rest" || l.intensity === "recovery";
+      if (!easyIntensity && l.dur <= nm.nm_max_s && fast) l.zone = "nm";
+      else if (l.intensity === "rest" || (l.intensity === "recovery" && l.dur <= 180) || (hasSpeed && isNum(l.speed) && l.speed < 0.6)) l.zone = "rest";
+      else l.zone = hrZone(l.hr, z);
+      l.label = LABEL[l.zone];
+      l.fast = l.zone === "nm";
+    });
+    return { laps, hasSpeed, hasPower, typical };
+  }
+
   // ---- laps ---------------------------------------------------------------
-  function analyse(series, family, settings) {
+  // fitLaps: laps recorded by the watch (preferred). Without them, laps are detected from the track.
+  function analyse(series, family, settings, fitLaps) {
     if (!series || !series.t || series.t.length < 10) return null;
     const s = prep(series);
     const key = zoneKey(family);
     const z = (settings && settings[key]) || null;
     const nm = { ...DEFAULT_NM, ...(z || {}) };
+    if (Array.isArray(fitLaps) && fitLaps.length) {
+      const w = fromWatch(s, family, fitLaps, z, nm);
+      return finish(s, w.laps, z, { hasSpeed: w.hasSpeed, hasPower: w.hasPower, typical: w.typical, key, source: "watch" });
+    }
     const { segs, hasSpeed, hasPower } = segment(s, family);
     const end = (i1) => (i1 < s.n ? s.t[i1] : s.t[s.n - 1] + s.dt[s.n - 1]);
 
@@ -196,15 +230,18 @@
       l.label = LABEL[l.zone];
       l.fast = l.kind === "effort";
     });
+    return finish(s, laps, z, { hasSpeed, hasPower, typical, key, source: "auto" });
+  }
 
-    // time in zone: heart rate per second, except neuromuscular reps count as NM
+  // time in zone: heart rate per second, except neuromuscular reps count as NM
+  function finish(s, laps, z, o) {
     const tiz = Object.fromEntries(ORDER.map((k) => [k, 0]));
     for (const l of laps) for (let i = l.i0; i < l.i1; i++) {
       const zone = l.zone === "nm" ? "nm" : hrZone(s.hr ? s.hr[i] : null, z);
       tiz[zone] += s.dt[i];
     }
     const counts = { reps: laps.filter((l) => l.zone === "nm").length };
-    return { laps, tiz, hasSpeed, hasPower, hasZones: !!(z && isNum(z.easy)), typical, s, counts, zoneKey: key };
+    return { laps, tiz, hasSpeed: o.hasSpeed, hasPower: o.hasPower, hasZones: !!(z && isNum(z.easy)), typical: o.typical, s, counts, zoneKey: o.key, source: o.source };
   }
 
   const api = { analyse, hrZone, zoneKey, ZONES, LABEL, SHORT, ORDER, ZONE_SPORTS, DEFAULT_NM, smooth, median };
