@@ -92,7 +92,27 @@
     .sess .kv b { color: var(--text-2); font-weight: 600; }
     .sess .gm { margin-top: 10px; background: var(--panel-2); border-radius: 6px; padding: 8px 10px; font-size: 12px; }
     .sess .gm .gt { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; color: var(--text-2); }
-    .sess select { margin-top: 8px; font-size: 12px; padding: 6px 8px; }
+    .sess select { margin-top: 6px; font-size: 12px; padding: 6px 8px; }
+    .work { display: block; color: inherit; text-decoration: none; margin: -4px -6px 0; padding: 4px 6px 6px; border-radius: 6px; transition: background .15s; }
+    .work:hover { background: var(--panel-2); }
+    .work .wt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .work .wtime { margin-left: auto; font-weight: 500; color: var(--mute); font-size: 12px; }
+    .work .go { margin-left: auto; color: var(--text); font-weight: 650; }
+    .strip { height: 40px; margin-top: 8px; border-radius: 4px; overflow: hidden; }
+    .strip svg { display: block; width: 100%; height: 40px; }
+    .strip .ph { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--panel-2), #ececee, var(--panel-2)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+    @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    .tizs { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--text-2); margin-top: 6px; min-height: 16px; font-variant-numeric: tabular-nums; }
+    .tizs span { display: inline-flex; align-items: center; gap: 4px; }
+    .tizs i { width: 8px; height: 8px; border-radius: 2px; }
+    .tizs .muted { color: var(--mute); }
+    .nolink { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--faint); }
+    .relink { margin-top: 8px; font-size: 12px; }
+    .relink summary { cursor: pointer; color: var(--mute); list-style: none; display: inline-flex; align-items: center; gap: 4px; }
+    .relink summary::-webkit-details-marker { display: none; }
+    .relink summary::before { content: "›"; display: inline-block; transition: transform .25s var(--spring); }
+    .relink[open] summary::before { transform: rotate(90deg); }
+    .relink summary:hover { color: var(--text); }
     .empty { color: var(--faint); font-size: 13px; padding: 10px 0; }
     .laps-link { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 650; color: var(--text); text-decoration: none; }
     .laps-link:hover { text-decoration: underline; }
@@ -183,6 +203,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="prompt.js"></script>
+  <script src="laps.js"></script>
   <script>
     const sb = supabase.createClient(NDURE.url, NDURE.key);
     const $ = (id) => document.getElementById(id);
@@ -324,34 +345,78 @@
       for (const s of ss) {
         const a = s.activity_id ? actById(s.activity_id) : null, f = s.family || a?.family || "other";
         const kv = [
-          s.start_time && ["Start", s.start_time.slice(0, 5)], s.duration_min && ["Time", hm(s.duration_min * 60)],
-          s.distance_km && ["Dist", km(s.distance_km * 1000)], s.rpe && ["RPE", s.rpe],
+          !a && s.start_time && ["Start", s.start_time.slice(0, 5)], !a && s.duration_min && ["Time", hm(s.duration_min * 60)],
+          !a && s.distance_km && ["Dist", km(s.distance_km * 1000)], s.rpe && ["RPE", s.rpe],
           s.pain != null && ["Pain", s.pain + (s.pain_where ? " · " + s.pain_where : "")],
         ].filter(Boolean);
+        const linkNote = s.match_status === "manual" ? "linked by you" : s.match_status === "auto" ? "linked automatically" : "";
         h += `<div class="sess">
-          <div class="st"><i class="dot" style="background:${famColor(f)}"></i>${esc(s.sport_raw || FAM[f])}</div>
+          ${a ? work(a, s.sport_raw || FAM[f]) : `<div class="st"><i class="dot" style="background:${famColor(f)}"></i>${esc(s.sport_raw || FAM[f])}<span class="nolink">no Garmin activity</span></div>`}
           ${kv.length ? `<div class="kv">${kv.map(([l, v]) => `<span>${l} <b>${esc(v)}</b></span>`).join("")}</div>` : ""}
           ${s.structure ? `<div class="note" style="margin-top:6px"><b>${esc(s.structure)}</b></div>` : ""}
           ${s.note ? `<div class="note" style="margin-top:6px">${esc(s.note)}</div>` : ""}
-          ${a ? `<div class="gm"><div class="gt"><span>⌚ ${esc(a.name || a.sport_key)}</span><span class="mono">${String(a.start_local).slice(11, 16)}</span></div>
-            <div class="kv">${[["Time", hm(a.duration_s)], a.distance_m && ["Dist", km(a.distance_m)], a.avg_hr && ["HR", a.avg_hr + " / " + (a.max_hr ?? "–")]].filter(Boolean).map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div>
-            <a class="laps-link" href="activity.html?id=${a.activity_id}">Laps and zones →</a></div>` : ""}
-          <select data-sid="${s.id}">
-            <option value="">${aa.length ? "Not linked" : "No Garmin activity this day"}</option>
-            ${aa.map((x) => `<option value="${x.activity_id}" ${String(x.activity_id) === String(s.activity_id) ? "selected" : ""}>${String(x.start_local).slice(11, 16)} · ${esc(x.name || x.sport_key)} · ${hm(x.duration_s)}</option>`).join("")}
-          </select>
-          <div class="hint" style="margin:4px 0 0;font-size:11px">${s.match_status === "manual" ? "Linked by you" : s.match_status === "auto" ? "Linked automatically" : ""}</div>
+          ${aa.length ? `<details class="relink"><summary>${a ? `Change link${linkNote ? ` · ${linkNote}` : ""}` : "Link to a Garmin activity"}</summary>
+            <select data-sid="${s.id}" aria-label="Garmin activity for this session">
+              <option value="">Not linked</option>
+              ${aa.map((x) => `<option value="${x.activity_id}" ${String(x.activity_id) === String(s.activity_id) ? "selected" : ""}>${String(x.start_local).slice(11, 16)} · ${esc(x.name || x.sport_key)} · ${hm(x.duration_s)}</option>`).join("")}
+            </select></details>` : ""}
         </div>`;
       }
       if (garminOnly.length) {
-        h += `<div class="sec">Garmin only</div>`;
-        for (const a of garminOnly) h += `<div class="sess" style="background:var(--panel-2);border-color:transparent">
-          <div class="st"><i class="dot" style="background:${famColor(a.family)}"></i>${esc(a.name || a.sport_key)}<span class="mono" style="margin-left:auto;font-weight:500;color:var(--mute)">${String(a.start_local).slice(11, 16)}</span></div>
-          <div class="kv">${[["Time", hm(a.duration_s)], a.distance_m && ["Dist", km(a.distance_m)], a.avg_hr && ["HR", a.avg_hr]].filter(Boolean).map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}</div>
-          <a class="laps-link" href="activity.html?id=${a.activity_id}">Laps and zones →</a></div>`;
+        h += `<div class="sec">${ss.length ? "Garmin only" : "Garmin"}</div>`;
+        for (const a of garminOnly) h += `<div class="sess">${work(a, a.name || a.sport_key)}</div>`;
       }
       $("detail").innerHTML = h;
       $("detail").querySelectorAll("select[data-sid]").forEach((el) => (el.onchange = () => relink(el.dataset.sid, el.value)));
+      fillStrips();
+    }
+
+    // ---- the work: Garmin activity with a mini lap strip coloured by zone ----
+    const pace = (a) => {
+      const v = a.distance_m && a.duration_s ? a.distance_m / a.duration_s : 0;
+      if (v < 0.3) return null;
+      if (a.family === "run" || a.family === "walk") { const s = Math.round(1000 / v); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} /km`; }
+      return (v * 3.6).toFixed(1) + " km/h";
+    };
+    function work(a, title) {
+      const kv = [["Time", hm(a.duration_s)], a.distance_m > 0 && ["Dist", km(a.distance_m)], pace(a) && [a.family === "run" || a.family === "walk" ? "Pace" : "Speed", pace(a)], a.avg_hr && ["HR", a.avg_hr + " / " + (a.max_hr ?? "–")]].filter(Boolean);
+      return `<a class="work" href="activity.html?id=${a.activity_id}" title="Open laps and zones">
+        <div class="st"><i class="dot" style="background:${famColor(a.family)}"></i><span class="wt">${esc(title)}</span><span class="mono wtime">${String(a.start_local).slice(11, 16)}</span></div>
+        <div class="strip" data-aid="${a.activity_id}" data-fam="${a.family || "other"}"><i class="ph"></i></div>
+        <div class="tizs" data-tiz="${a.activity_id}"></div>
+        <div class="kv">${kv.map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("")}<span class="go">Laps →</span></div>
+      </a>`;
+    }
+    const lapCache = new Map();
+    let zonesP = null;
+    async function lapsFor(id, fam) {
+      if (lapCache.has(id)) return lapCache.get(id);
+      const p = (async () => {
+        zonesP ??= sb.from("user_settings").select("zones").maybeSingle().then((r) => r.data?.zones || {});
+        const [zones, r] = await Promise.all([zonesP, invoke("garmin", { action: "streams", activity_id: Number(id) })]);
+        return NdureLaps.analyse(r.series, fam, zones, r.laps);
+      })().catch(() => null);
+      lapCache.set(id, p);
+      return p;
+    }
+    function fillStrips() {
+      $("detail").querySelectorAll(".strip[data-aid]").forEach(async (el) => {
+        const r = await lapsFor(el.dataset.aid, el.dataset.fam);
+        if (!el.isConnected) return;
+        if (!r) { el.remove(); return; }
+        const laps = r.laps, T = laps[laps.length - 1].t1 - laps[0].t0, t0 = laps[0].t0;
+        const m = (l) => (r.hasSpeed ? l.speed || 0 : l.hr || 0);
+        const vals = laps.map(m).filter((x) => x > 0), hi = Math.max(...vals, 1), lo = r.hasSpeed ? 0 : Math.min(...vals) - 8;
+        el.innerHTML = `<svg viewBox="0 0 300 40" preserveAspectRatio="none" aria-hidden="true">${laps.map((l) => {
+          const x = ((l.t0 - t0) / T) * 300, w = Math.max(0.8, ((l.t1 - l.t0) / T) * 300 - 0.6);
+          const hgt = m(l) <= 0 ? 4 : 6 + 34 * Math.max(0, (m(l) - lo) / (hi - lo));
+          return `<rect x="${x.toFixed(1)}" y="${(40 - hgt).toFixed(1)}" width="${w.toFixed(1)}" height="${hgt.toFixed(1)}" rx="1" fill="var(--z-${l.zone})"/>`;
+        }).join("")}</svg>`;
+        const total = Object.values(r.tiz).reduce((x, y) => x + y, 0) || 1;
+        const top = NdureLaps.ORDER.filter((z) => z !== "none" && r.tiz[z] >= 30).sort((x, y) => r.tiz[y] - r.tiz[x]).slice(0, 4);
+        const tz = el.parentElement.querySelector(".tizs");
+        if (tz) tz.innerHTML = r.hasZones ? top.map((z) => `<span><i style="background:var(--z-${z})"></i>${NdureLaps.SHORT[z]} ${hm(r.tiz[z])}</span>`).join("") : `<span class="muted">Set zones in Settings to colour laps</span>`;
+      });
     }
 
     function select(d, keepScroll) {

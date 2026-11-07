@@ -79,7 +79,7 @@
       <div class="tbl-wrap"><table id="tbl"></table></div>
     </div>
     <div class="panel">
-      <h2>Last 4 weeks · km</h2>
+      <h2>Weeks (Mon–Sun) · km</h2>
       <div class="weeks" id="weeks"></div>
       <div class="legend" id="legend"></div>
     </div>
@@ -93,6 +93,7 @@
     const $ = (id) => document.getElementById(id);
     const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    const monday = (d) => addDays(d, -((d.getDay() + 6) % 7)); // weeks start on Monday
     const hm = (s) => { s = Math.round((s || 0) / 60); return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} h` : `${s} min`; };
     const kmf = (m) => (m / 1000).toFixed(1);
     const FAM = [["run", "Run"], ["bike", "Bike"], ["swim", "Swim"], ["ski", "Ski"], ["walk", "Walk"], ["strength", "Strength"], ["other", "Other"]];
@@ -107,7 +108,8 @@
     }
 
     async function load() {
-      const from = ymd(addDays(today, -27)), to = ymd(today);
+      const first = addDays(monday(today), -21); // 4 Monday-weeks, and the 28-day window
+      const from = ymd(first < addDays(today, -27) ? first : addDays(today, -27)), to = ymd(today);
       $("range").textContent = `${addDays(today, -27).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${today.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · rolling windows ending today`;
       const [a, s] = await Promise.all([
         sb.from("garmin_activities").select("activity_id,date,family,duration_s,distance_m").gte("date", from).lte("date", to),
@@ -154,9 +156,9 @@
           <tfoot><tr><td>All</td>${tot.map((x) => `<td><b>${kmf(x.m)}</b> km<small>${hm(x.t)}</small></td>`).join("")}<td></td></tr></tfoot>`;
       }
 
-      // Last 4 weeks (rolling 7-day blocks ending today), stacked km by sport
+      // Last 4 weeks, Monday–Sunday (this week so far), stacked km by sport
       const blocks = [3, 2, 1, 0].map((k) => {
-        const end = addDays(today, -7 * k), start = addDays(end, -6);
+        const start = addDays(monday(today), -7 * k), end = addDays(start, 6);
         const list = items.filter((x) => x.date >= ymd(start) && x.date <= ymd(end));
         return { start, end, list, m: sum(list).m };
       });
@@ -165,7 +167,7 @@
         const parts = FAM.map(([f]) => [f, sum(b.list.filter((x) => x.f === f)).m]).filter(([, m]) => m > 0);
         return `<div class="wk"><b>${kmf(b.m)}</b>
           <div class="col" style="height:${Math.max(4, (140 * b.m) / maxW)}px;animation-delay:${i * 0.05}s">${parts.map(([f, m]) => `<i style="height:${(100 * m) / b.m}%;background:${color(f)}"></i>`).join("")}</div>
-          <span>${b.start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}–${b.end.toLocaleDateString("en-GB", { day: "numeric" })}</span></div>`;
+          <span>${i === 3 ? "This week" : `Mon ${b.start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}</span></div>`;
       }).join("");
       const used = new Set(items.filter((x) => x.m > 0).map((x) => x.f));
       $("legend").innerHTML = FAM.filter(([f]) => used.has(f)).map(([f, l]) => `<span><i style="background:${color(f)}"></i>${l}</span>`).join("");
