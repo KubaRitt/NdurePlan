@@ -20,10 +20,10 @@
       }
       return row(act, L.load(res, fam, act.sport_key, zones, rhr), res, zones, rhr);
     }
-    const key = (zones, act, rhr) => L.calcKey(zones, act.family || "other") + "|" + (rhr ?? "") + "|h1";
+    const key = (zones, act, rhr) => L.calcKey(zones, act.family || "other") + "|" + (rhr ?? "") + "|h2";
 
     // Second-by-second distributions for the dashboard:
-    //   hr: { "140": seconds at 140–144 bpm, … } (5 bpm bins)
+    //   hr: { "140": seconds at 140 bpm, … } (1 bpm bins, grouped by zone on the dashboard)
     //   sp: { bin: [seconds, Σ hr·s, seconds with hr] }, bins = pace s/km floored to 5 s (run/walk) or km/h floored to 1
     function hist(s, fam) {
       if (!s || !s.n) return null;
@@ -32,7 +32,7 @@
       for (let i = 0; i < s.n; i++) {
         const dt = s.dt[i]; if (!(dt > 0)) continue;
         const h = s.hr && s.hr[i], hOk = h >= 40 && h <= 235;
-        if (hOk) { const b = Math.floor(h / 5) * 5; hr[b] = (hr[b] || 0) + dt; }
+        if (hOk) { const b = Math.round(h); hr[b] = (hr[b] || 0) + dt; }
         const v = s.v && s.v[i];
         if (!(v > 0.5)) continue; // standing
         let b;
