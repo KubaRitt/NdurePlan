@@ -587,7 +587,7 @@
 
       // heart rate, 5 bpm bins
       const pct = (v, t) => ((100 * v) / t).toFixed(1) + " %";
-      // ---- heart rate: bins start at your zone limits, so no bar is split between two zones ----
+      // ---- heart rate: 2 bpm bars that start at your zone limits, so no bar is split between two zones ----
       const add = (o, h) => { for (const [k, v] of Object.entries(h || {})) o[k] = (o[k] || 0) + v; return o; };
       const hr = {}, hrP = {};
       for (const a of sel) add(hr, metrics[a.activity_id].hist.hr);
@@ -601,10 +601,10 @@
         const zs = Object.entries(zt).filter(([, v]) => v > 0);
         $("zbar").innerHTML = zs.map(([k, v], i) => `<div style="flex:${v};background:${ZCOL[k]};animation-delay:${i * 0.05}s" title="${L.LABEL[k]} ${hmL(v)}">${v / tot >= 0.07 ? Math.round((100 * v) / tot) + "%" : ""}</div>`).join("");
         $("zlab").innerHTML = zs.map(([k, v]) => `<span><i style="background:${ZCOL[k]}"></i>${k === "none" ? "No zones set" : L.LABEL[k]} <b>${hmL(v)}</b></span>`).join("");
-        // drop the thin ends (each bpm under 0.3 % of the time)
+        // drop the thin low end (each bpm under 0.3 % of the time)
         let lo = hk[0], hi = hk[hk.length - 1];
         while (lo < hi && (hr[lo] || 0) < tot * 0.003) lo++;
-        while (hi > lo && (hr[hi] || 0) < tot * 0.003) hi--;
+        while (hi > lo && (hr[hi] || 0) < tot * 0.0003) hi--; // keep your max efforts: only drop single stray seconds
         // zone ranges [from, to] in bpm, cut to the data
         const lim = [["easy", z.easy], ["ap1", z.ap1], ["ap2", z.ap2], ["ap3", Infinity]].filter(([, v]) => v != null && !isNaN(v));
         let ranges = [], start = lo;
@@ -612,7 +612,7 @@
         else ranges = [["none", lo, hi]];
         const bins = [];
         for (const [k, a, b] of ranges) {
-          const n = Math.max(1, Math.round((b - a + 1) / 5)), w = (b - a + 1) / n;
+          const n = Math.max(1, Math.round((b - a + 1) / 2)), w = (b - a + 1) / n; // ~2 bpm bars, never crossing a zone limit
           for (let j = 0; j < n; j++) {
             const x0 = Math.round(a + j * w), x1 = Math.round(a + (j + 1) * w) - 1;
             let v = 0, pv = 0; for (let h = x0; h <= x1; h++) { v += hr[h] || 0; pv += hrP[h] || 0; }
@@ -621,7 +621,8 @@
         }
         histChart($("hchart"), bins, {
           bands: ranges.map(([k, a, b]) => ({ lo: a, hi: b + 1, label: k === "none" ? "" : L.SHORT?.[k] || L.LABEL[k] })),
-          xLabel: (v) => String(v), edgeLabel: (v, i) => (i === 0 ? v : v - 1), // zone limits read as "≤ 150"
+          xLabel: (v) => String(v), edgeLabel: (v, first) => (first ? v : v - 1), // zone limits read as "≤ 150"
+          ticks: (() => { const t = []; for (let v = Math.ceil(lo / 10) * 10; v <= hi; v += 10) t.push(v); return t; })(),
         });
       }
 
@@ -638,31 +639,36 @@
       // stats on everything
       let acc = 0, med = null; for (const k of sk) { acc += sp[k][0]; if (med == null && acc >= allT / 2) med = k; }
       const ep = L.loadCfg(zones).easy_pace_s;
-      // bins of 5 s/km (10 s when the spread is wide) or 1 km/h
-      const step = pace ? (sk[sk.length - 1] - sk[0] > 240 ? 10 : 5) : 1;
-      const bucket = (o) => { const r = {}; for (const [k, c] of Object.entries(o)) { const b = Math.floor(k / step) * step, x = (r[b] ||= [0, 0, 0]); x[0] += c[0]; x[1] += c[1]; x[2] += c[2]; } return r; };
-      const agg = bucket(sp), aggP = bucket(spP), sec = (k) => (agg[k] ? agg[k][0] : 0);
-      const ks = Object.keys(agg).map(Number).sort((a, b) => a - b);
-      // keep only the main range: drop the slowest and fastest 5 % of the time,
-      // then any end bin that still holds under 2 %
-      let i0 = 0, i1 = ks.length - 1, c0 = 0, c1 = 0;
-      while (i0 < i1 && c0 + sec(ks[i0]) <= allT * 0.05) c0 += sec(ks[i0++]);
-      while (i1 > i0 && c1 + sec(ks[i1]) <= allT * 0.05) c1 += sec(ks[i1--]);
-      while (i0 < i1 && sec(ks[i0]) < allT * 0.02) i0++;
-      while (i1 > i0 && sec(ks[i1]) < allT * 0.02) i1--;
-      const keys = []; for (let k = ks[i0]; k <= ks[i1]; k += step) keys.push(k);
-      const shown = keys.reduce((s, k) => s + sec(k), 0);
-      const mode = keys.reduce((a, k) => (sec(k) > sec(a) ? k : a), keys[0]);
-      const mid = (k) => (pace ? paceS(k + step / 2) : (k + step / 2).toFixed(1));
-      const fast = pace ? sk.filter((k) => k + 5 <= ep).reduce((s, k) => s + sp[k][0], 0) / allT : null;
-      $("sstats").innerHTML = `<div><b>${mid(mode)}</b>most time</div><div><b>${mid(med - (med % step))}</b>median</div><div><b>${hmL(allT)}</b>moving</div>` + (fast != null ? `<div><b>${Math.round(fast * 100)} %</b>faster than easy (${paceS(ep)})</div>` : "");
-      // zone of each bin from its average HR; neighbouring bins in the same zone form a band
-      const binZone = (k) => { const c = agg[k]; const ah = c && c[2] ? c[1] / c[2] : null; return [ah, ah ? L.hrZone(ah, z) : "none"]; };
-      const bins = keys.map((k) => {
-        const c = agg[k] || [0, 0, 0], [ah, zk] = binZone(k);
-        const lab = pace ? `${paceS(k)}–${paceS(k + step - 1)} /km` : `${k}–${k + step} km/h`;
-        return { lo: k, hi: k + step, v: c[0], p: hasPrev ? (aggP[k] ? aggP[k][0] : 0) : null, zk, color: ZCOL[zk], tip: `<b>${lab}</b><br>${hmL(c[0])} · ${pct(c[0], allT)}<br><span class="z">avg HR ${ah ? Math.round(ah) + " bpm · " + (zk === "none" ? "no zone" : L.LABEL[zk]) : "–"}</span>` };
+      // variable bins: finer where it's fast (a 5 s step at 3:00/km is a much bigger change than at 6:00/km)
+      //   pace: 2 s under 4:00 · 3 s to 5:00 · 5 s to 6:00 · 10 s slower;  speed: 1 km/h
+      const pStep = (k) => (!pace ? 1 : k < 240 ? 2 : k < 300 ? 3 : k < 360 ? 5 : 10);
+      const raw = (o, k) => (o[k] ? o[k][0] : 0);
+      // range on the raw data: fast end keeps everything but the fastest 1 % (your reps live there),
+      // slow end drops the slowest 5 % of the time (walking, stops, GPS noise)
+      const fastEnd = pace ? sk : [...sk].reverse(), slowEnd = pace ? [...sk].reverse() : sk;
+      let cf = 0, cs = 0, kf = fastEnd[0], ks0 = slowEnd[0];
+      for (const k of fastEnd) { if (cf + raw(sp, k) > allT * 0.01) { kf = k; break; } cf += raw(sp, k); }
+      for (const k of slowEnd) { if (cs + raw(sp, k) > allT * 0.05) { ks0 = k; break; } cs += raw(sp, k); }
+      let lo = Math.min(kf, ks0), hi = Math.max(kf, ks0);
+      // bin edges on a fixed grid so bins line up between periods
+      const edges = []; for (let e = pace ? lo - (lo % 2) : Math.floor(lo); e <= hi; e += pStep(e)) edges.push(e);
+      edges.push(edges[edges.length - 1] + pStep(edges[edges.length - 1]));
+      const sumIn = (o, a, b) => { const r = [0, 0, 0]; for (const [k, c] of Object.entries(o)) if (k >= a && k < b) { r[0] += c[0]; r[1] += c[1]; r[2] += c[2]; } return r; };
+      let bins = edges.slice(0, -1).map((a, n) => {
+        const b = edges[n + 1], c = sumIn(sp, a, b), cp = sumIn(spP, a, b);
+        const ah = c[2] ? c[1] / c[2] : null, zk = ah ? L.hrZone(ah, z) : "none";
+        const lab = pace ? `${paceS(a)}–${paceS(b - 1)} /km` : `${a}–${b} km/h`;
+        return { lo: a, hi: b, v: c[0], p: hasPrev ? cp[0] : null, zk, color: ZCOL[zk], tip: `<b>${lab}</b><br>${hmL(c[0])} · ${pct(c[0], allT)}<br><span class="z">avg HR ${ah ? Math.round(ah) + " bpm · " + (zk === "none" ? "no zone" : L.LABEL[zk]) : "–"}</span>` };
       });
+      // slow end: also drop end bins under 1.5 % of the time
+      const slowIsHigh = pace;
+      while (bins.length > 2 && bins[slowIsHigh ? bins.length - 1 : 0].v < allT * 0.015) slowIsHigh ? bins.pop() : bins.shift();
+      const shown = bins.reduce((a, b) => a + b.v, 0);
+      // stats on everything
+      const modeB = bins.reduce((a, b) => (b.v / (b.hi - b.lo) > a.v / (a.hi - a.lo) ? b : a), bins[0]);
+      const mid = (a, b) => (pace ? paceS((a + b) / 2) : ((a + b) / 2).toFixed(1));
+      const fast = pace ? sk.filter((k) => k < ep).reduce((a, k) => a + sp[k][0], 0) / allT : null;
+      $("sstats").innerHTML = `<div><b>${mid(modeB.lo, modeB.hi)}</b>most time</div><div><b>${pace ? paceS(med) : med}</b>median</div><div><b>${hmL(allT)}</b>moving</div>` + (fast != null ? `<div><b>${Math.round(fast * 100)} %</b>faster than easy (${paceS(ep)})</div>` : "");
       // bands: walking from slow to fast, the zone only steps up (faster = harder), so you get at most one band per zone
       const RANK = { none: -1, easy: 0, ap1: 1, ap2: 2, ap3: 3 }, NAME = ["easy", "ap1", "ap2", "ap3"];
       const bands = []; let cur = -1;
@@ -673,53 +679,55 @@
       }
       for (const b of bands) b.label = b.zk === "none" ? "" : L.SHORT?.[b.zk] || L.LABEL[b.zk];
       histChart($("schart"), bins, {
-        reverse: pace, bands,
+        tf: pace ? (v) => 1000 / v : (v) => v, bands,
+        ticks: (() => { const t = [], st = pace ? 30 : 2; for (let v = Math.ceil(bins[0].lo / st) * st; v <= bins[bins.length - 1].hi; v += st) t.push(v); return t; })(),
         xLabel: (v) => (pace ? paceS(v) : String(v)),
-        marker: pace && ep > keys[0] && ep < keys[keys.length - 1] + step ? { at: ep, label: "easy" } : null,
+        marker: pace && ep > bins[0].lo && ep < bins[bins.length - 1].hi ? { at: ep, label: "easy" } : null,
         foot: shown < allT * 0.995 ? `${pct(allT - shown, allT)} outside the range shown` : "",
       });
     }
 
     // ---- histogram with real bin widths, zone bands and labels on the zone edges ----
-    function histChart(el, bins, { reverse, bands = [], xLabel, edgeLabel, marker, foot }) {
+    // tf = x-axis transform (pace uses speed, so the fast end gets room); height = time per unit of tf
+    function histChart(el, bins, { tf = (v) => v, bands = [], xLabel, edgeLabel, marker, foot, ticks = [] }) {
       const W = el.clientWidth || 500, H = el.clientHeight || 210, pl = 6, pr = 6, pt = 18, pb = 22, iw = W - pl - pr, ih = H - pt - pb;
-      const lo = Math.min(...bins.map((b) => b.lo)), hi = Math.max(...bins.map((b) => b.hi)), span = hi - lo || 1;
-      const X = (v) => pl + (iw * (reverse ? hi - v : v - lo)) / span;
-      // height = time per unit (a 4 bpm bin is not punished against a 6 bpm one)
-      const dens = (b, v) => v / (b.hi - b.lo);
+      const us = bins.flatMap((b) => [tf(b.lo), tf(b.hi)]), u0 = Math.min(...us), u1 = Math.max(...us), span = u1 - u0 || 1;
+      const X = (v) => pl + (iw * (tf(v) - u0)) / span;
+      const xs = (b) => { const a = X(b.lo), c = X(b.hi); return [Math.min(a, c), Math.max(a, c)]; };
+      const dens = (b, v) => v / Math.abs(tf(b.hi) - tf(b.lo));
       const max = Math.max(1e-9, ...bins.map((b) => Math.max(dens(b, b.v), b.p != null ? dens(b, b.p) : 0)));
       const Y = (d) => pt + ih - (ih * d) / max;
       let g = "";
-      // zone bands: faint separators + label on top; edge values on the axis
-      const edges = new Set([lo, hi]);
-      bands.forEach((b, i) => {
-        const x0 = X(b.lo), x1 = X(b.hi), xa = Math.min(x0, x1), wd = Math.abs(x1 - x0);
-        if (b.label && wd > 26) g += `<text x="${xa + wd / 2}" y="${pt - 6}" text-anchor="middle" style="font-weight:700;fill:var(--text-2)">${b.label}</text>`;
-        const edgeX = reverse ? x1 : x0;
-        if (i) g += `<line x1="${edgeX}" x2="${edgeX}" y1="${pt - 2}" y2="${pt + ih + 4}" stroke="var(--faint)" stroke-dasharray="2 3"/>`;
+      const edges = new Set([bins[0].lo, bins[bins.length - 1].hi]);
+      [...bands].sort((a, b) => xs(a)[0] - xs(b)[0]).forEach((b, i) => {
+        const [xa, xb] = xs(b);
+        if (b.label && xb - xa > 26) g += `<text x="${(xa + xb) / 2}" y="${pt - 6}" text-anchor="middle" style="font-weight:700;fill:var(--text-2)">${b.label}</text>`;
+        if (i) g += `<line x1="${xa}" x2="${xa}" y1="${pt - 2}" y2="${pt + ih + 4}" stroke="var(--faint)" stroke-dasharray="2 3"/>`;
         edges.add(b.lo); edges.add(b.hi);
       });
       g += `<line x1="${pl}" x2="${pl + iw}" y1="${pt + ih}" y2="${pt + ih}" stroke="var(--line)"/>`;
       bins.forEach((b, i) => {
-        const x0 = X(reverse ? b.hi : b.lo), x1 = X(reverse ? b.lo : b.hi), w = x1 - x0, gap = w > 8 ? 2 : 1, y = Y(dens(b, b.v));
-        g += `<path class="bar" data-b="${i}" d="${topRounded(x0 + gap / 2, y, Math.max(1, w - gap), pt + ih - y, 3)}" fill="${b.color}"/>`;
+        const [x0, x1] = xs(b), w = x1 - x0, gap = w > 6 ? 1.5 : w > 3 ? 1 : 0, y = Y(dens(b, b.v));
+        g += `<path class="bar" data-b="${i}" d="${topRounded(x0 + gap / 2, y, Math.max(0.8, w - gap), pt + ih - y, w > 6 ? 2 : 1)}" fill="${b.color}"/>`;
       });
       if (bins.some((b) => b.p != null)) {
-        let d = ""; (reverse ? [...bins].reverse() : bins).forEach((b, i) => { const x0 = X(reverse ? b.hi : b.lo), x1 = X(reverse ? b.lo : b.hi), y = Y(dens(b, b.p || 0)).toFixed(1); d += `${i ? "L" : "M"}${x0.toFixed(1)},${y}H${x1.toFixed(1)}`; });
-        g += `<path d="${d}" fill="none" stroke="var(--text-2)" stroke-width="1.5" stroke-linejoin="round" opacity=".75"/>`;
+        let d = ""; [...bins].sort((a, b) => xs(a)[0] - xs(b)[0]).forEach((b, i) => { const [x0, x1] = xs(b), y = Y(dens(b, b.p || 0)).toFixed(1); d += `${i ? "L" : "M"}${x0.toFixed(1)},${y}H${x1.toFixed(1)}`; });
+        g += `<path d="${d}" fill="none" stroke="var(--text-2)" stroke-width="1.25" stroke-linejoin="round" opacity=".7"/>`;
       }
-      // axis labels at band edges, skipping any that would collide
-      let lastX = -1e9; const sorted = [...edges].sort((a, b) => X(a) - X(b));
-      sorted.forEach((v, i) => { const x = X(v); if (x - lastX < 34) return; lastX = x; const lab = edgeLabel ? edgeLabel(v, i, v === hi) : xLabel(v); g += `<text x="${x}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === sorted.length - 1 ? "end" : "middle"}">${typeof lab === "number" ? xLabel(lab) : lab}</text>`; });
+      // axis labels: zone edges first (they matter most), then regular ticks where there's room
+      const placed = [], fits = (x) => placed.every((p) => Math.abs(p - x) >= 36);
+      const labelAt = (v, txt, bold) => { const x = X(v); if (x < pl - 1 || x > pl + iw + 1 || !fits(x)) return; placed.push(x); g += `<text x="${x}" y="${H - 6}" text-anchor="${x < pl + 14 ? "start" : x > pl + iw - 14 ? "end" : "middle"}" ${bold ? 'style="fill:var(--text-2);font-weight:650"' : ""}>${txt}</text>`; };
+      const ev = [...edges]; ev.forEach((v) => labelAt(v, edgeLabel ? xLabel(edgeLabel(v, v === ev[0])) : xLabel(v), true));
+      ticks.forEach((v) => labelAt(v, xLabel(v)));
       if (marker) { const mx = X(marker.at); g += `<line x1="${mx}" x2="${mx}" y1="${pt}" y2="${pt + ih}" stroke="var(--text-2)" stroke-dasharray="3 3"/><text x="${mx + 4}" y="${pt + 10}" style="fill:var(--text-2);font-weight:650">${marker.label}</text>`; }
-      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${bins.map((b, i) => { const x0 = X(reverse ? b.hi : b.lo), x1 = X(reverse ? b.lo : b.hi); return `<rect x="${x0}" y="0" width="${x1 - x0}" height="${pt + ih}" fill="transparent" data-i="${i}"/>`; }).join("")}</svg><div class="tip"></div>${foot ? `<div class="note" style="text-align:right;margin:2px 0 0">${foot}</div>` : ""}`;
+      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${bins.map((b, i) => { const [x0, x1] = xs(b); return `<rect x="${x0}" y="0" width="${Math.max(1, x1 - x0)}" height="${pt + ih}" fill="transparent" data-i="${i}"/>`; }).join("")}</svg><div class="tip"></div>${foot ? `<div class="note" style="text-align:right;margin:2px 0 0">${foot}</div>` : ""}`;
       const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
       svg.onpointermove = (e) => {
         const t = e.target.closest("[data-i]"); if (!t) return;
-        const i = +t.dataset.i, r = svg.getBoundingClientRect(), sx = W / r.width, b = bins[i], cx = (X(b.lo) + X(b.hi)) / 2;
+        const i = +t.dataset.i, r = svg.getBoundingClientRect(), sx = W / r.width, b = bins[i], [x0, x1] = xs(b);
         svg.querySelectorAll(".bar").forEach((p) => (p.style.opacity = +p.dataset.b === i ? 1 : 0.4));
         tip.innerHTML = b.tip + (b.p != null ? `<br><span class="z">previous: ${hmL(b.p)}</span>` : "");
-        tip.style.left = Math.max(90, Math.min(r.width - 90, cx / sx)) + "px"; tip.classList.add("on");
+        tip.style.left = Math.max(90, Math.min(r.width - 90, (x0 + x1) / 2 / sx)) + "px"; tip.classList.add("on");
       };
       svg.onpointerleave = () => { tip.classList.remove("on"); svg.querySelectorAll(".bar").forEach((p) => (p.style.opacity = 1)); };
     }

@@ -123,6 +123,26 @@
     .tizs .ld { width: 100%; color: var(--mute); }
     .tizs .ld b { color: var(--text); font-weight: 650; }
     .nolink { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--faint); }
+    /* inline diary editing */
+    .ed { display: grid; gap: 6px; margin-top: 8px; }
+    .ed textarea { min-height: 56px; resize: vertical; font-size: 13px; padding: 8px 10px; line-height: 1.45; }
+    .ed input, .ed select { font-size: 13px; padding: 6px 9px; }
+    .ed .r { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .ed .r > input.grow { flex: 1; min-width: 120px; }
+    .ed .num { width: 70px; }
+    .ed .lab { font-size: 11px; color: var(--mute); font-weight: 600; }
+    .pick { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+    .pick button { all: unset; cursor: pointer; min-width: 26px; height: 26px; border-radius: 6px; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--mute); background: var(--panel-2); padding: 0 6px; box-sizing: border-box; }
+    .pick button:hover { color: var(--text); }
+    .pick button.on { color: #fff; }
+    .pick button:focus-visible { outline: 2px solid var(--text); }
+    .pick.tags button { font-weight: 600; font-size: 11px; }
+    .pick.tags button.on { background: var(--text); }
+    .pick.rpe button.on { background: var(--text); }
+    .saved { font-size: 11px; color: var(--mute); min-height: 14px; transition: opacity .3s; }
+    .addrow { display: flex; gap: 6px; margin-top: 4px; }
+    .del { all: unset; cursor: pointer; font-size: 12px; color: var(--mute); }
+    .del:hover { color: var(--danger); }
     .relink { margin-top: 8px; font-size: 12px; }
     .relink summary { cursor: pointer; color: var(--mute); list-style: none; display: inline-flex; align-items: center; gap: 4px; }
     .relink summary::-webkit-details-marker { display: none; }
@@ -333,7 +353,7 @@
       const a = s.activity_id ? actById(s.activity_id) : null;
       const f = s.family || a?.family || "other";
       const v = a ? [hm(a.duration_s), km(a.distance_m)].filter(Boolean).join(" · ") : [s.duration_min ? hm(s.duration_min * 60) : "", s.distance_km ? km(s.distance_km * 1000) : ""].filter(Boolean).join(" · ");
-      return `<span class="chip ${a ? "" : "unlinked"}" title="${a ? "Linked to Garmin" : "Not linked to Garmin"}"><i class="dot" style="background:${famColor(f)}"></i><span class="lbl">${esc(s.sport_raw || FAM[f])}</span>${v ? `<span class="v">${v}</span>` : ""}${a ? '<span class="w">●</span>' : ""}</span>`;
+      return `<span class="chip ${a ? "" : "unlinked"}" title="${a ? "Linked to Garmin" : "Not linked to Garmin"}"><i class="dot" style="background:${famColor(f)}"></i><span class="lbl">${esc(s.sport_raw || a?.name || FAM[f])}</span>${v ? `<span class="v">${v}</span>` : ""}${a ? '<span class="w">●</span>' : ""}</span>`;
     }
     const chipGarmin = (a) => `<span class="chip garmin" title="Garmin only"><i class="dot" style="background:${famColor(a.family)}"></i><span class="lbl">${esc(a.name || FAM[a.family] || a.sport_key)}</span><span class="v">${[hm(a.duration_s), km(a.distance_m)].filter(Boolean).join(" · ")}</span></span>`;
 
@@ -361,45 +381,127 @@
       $("tl").querySelectorAll(".day").forEach((r) => (r.onclick = () => select(parse(r.dataset.k), true)));
     }
 
+    const TAGS = ["sick", "sore", "injury", "travel", "race", "rest", "altitude", "heat"];
     function renderDetail() {
-      const k = ymd(sel), { d, ss, aa, garminOnly } = dayData(k);
+      const k = ymd(sel), { d, ss, aa } = dayData(k);
       const stat = (v, l) => `<div><b>${v ?? "–"}</b><span>${l}</span></div>`;
       const sleep = d?.sleep_s ? `${Math.floor(d.sleep_s / 3600)}:${String(Math.round((d.sleep_s % 3600) / 60)).padStart(2, "0")}` : null;
-      let h = `<div class="dh"><h2>${sel.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</h2>
-        ${d?.feel ? `<span class="feel" style="background:${feelColor(d.feel)}">${d.feel}</span>` : ""}</div>
-        ${(d?.tags ?? []).length ? `<div class="row" style="margin-top:8px;flex:none;gap:4px">${d.tags.map((t) => `<span class="tag" style="flex:none">${esc(t)}</span>`).join("")}</div>` : ""}
+      let h = `<div class="dh"><h2>${sel.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</h2><span class="saved" id="saved"></span></div>
         <div class="stats">${stat(d?.hrv ? d.hrv + " ms" : null, "HRV")}${stat(d?.rhr ? d.rhr + " bpm" : null, "Resting HR")}${stat(sleep, "Sleep")}</div>`;
-      h += `<div class="sec">Day</div>${d?.note ? `<div class="note">${esc(d.note)}</div>` : '<div class="empty">No day note.</div>'}`;
-      if (d?.unparsed) h += `<div class="sec">Unplaced text</div><div class="note">${esc(d.unparsed)}</div>`;
+      // ---- day: feel, tags, note ----
+      h += `<div class="sec">Day</div><div class="ed" data-day>
+        <div class="r"><span class="lab">Feel</span><span class="pick feel-pick">${[1, 2, 3, 4, 5].map((n) => `<button data-feel="${n}" class="${d?.feel === n ? "on" : ""}" style="${d?.feel === n ? `background:${feelColor(n)}` : ""}" aria-pressed="${d?.feel === n}">${n}</button>`).join("")}</span></div>
+        <span class="pick tags">${TAGS.map((t) => `<button data-tag="${t}" class="${(d?.tags ?? []).includes(t) ? "on" : ""}">${t}</button>`).join("")}</span>
+        <textarea data-f="note" placeholder="How was the day? Sleep, legs, life…">${esc(d?.note || "")}</textarea>
+        ${d?.unparsed ? `<div class="note" style="font-size:12px;color:var(--mute)">Unplaced from import: ${esc(d.unparsed)}</div>` : ""}
+      </div>`;
+      // ---- training: every Garmin activity gets its own label + note; sessions without Garmin below ----
       h += `<div class="sec">Training</div>`;
-      if (!ss.length && !aa.length) h += '<div class="empty">Nothing recorded.</div>';
-      for (const s of ss) {
-        const a = s.activity_id ? actById(s.activity_id) : null, f = s.family || a?.family || "other";
-        const kv = [
-          !a && s.start_time && ["Start", s.start_time.slice(0, 5)], !a && s.duration_min && ["Time", hm(s.duration_min * 60)],
-          !a && s.distance_km && ["Dist", km(s.distance_km * 1000)], s.rpe && ["RPE", s.rpe],
-          s.pain != null && ["Pain", s.pain + (s.pain_where ? " · " + s.pain_where : "")],
-        ].filter(Boolean);
-        const linkNote = s.match_status === "manual" ? "linked by you" : s.match_status === "auto" ? "linked automatically" : "";
-        h += `<div class="sess">
-          ${a ? work(a, s.sport_raw || FAM[f]) : `<div class="st"><i class="dot" style="background:${famColor(f)}"></i>${esc(s.sport_raw || FAM[f])}<span class="nolink">no Garmin activity</span></div>`}
-          ${kv.length ? `<div class="kv">${kv.map(([l, v]) => `<span>${l} <b>${esc(v)}</b></span>`).join("")}</div>` : ""}
-          ${s.structure ? `<div class="note" style="margin-top:6px"><b>${esc(s.structure)}</b></div>` : ""}
-          ${s.note ? `<div class="note" style="margin-top:6px">${esc(s.note)}</div>` : ""}
-          ${aa.length ? `<details class="relink"><summary>${a ? `Change link${linkNote ? ` · ${linkNote}` : ""}` : "Link to a Garmin activity"}</summary>
-            <select data-sid="${s.id}" aria-label="Garmin activity for this session">
-              <option value="">Not linked</option>
-              ${aa.map((x) => `<option value="${x.activity_id}" ${String(x.activity_id) === String(s.activity_id) ? "selected" : ""}>${String(x.start_local).slice(11, 16)} · ${esc(x.name || x.sport_key)} · ${hm(x.duration_s)}</option>`).join("")}
-            </select></details>` : ""}
-        </div>`;
+      if (!ss.length && !aa.length) h += '<div class="empty" style="padding:4px 0 10px">Nothing recorded.</div>';
+      const linkedOf = (a) => ss.find((x) => String(x.activity_id) === String(a.activity_id));
+      for (const a of aa) {
+        const sx = linkedOf(a);
+        h += `<div class="sess">${work(a, sx?.sport_raw || a.name || a.sport_key)}${extraKv(sx)}${sessEditor(sx, a)}</div>`;
       }
-      if (garminOnly.length) {
-        h += `<div class="sec">${ss.length ? "Garmin only" : "Garmin"}</div>`;
-        for (const a of garminOnly) h += `<div class="sess">${work(a, a.name || a.sport_key)}</div>`;
+      for (const sx of ss.filter((x) => !x.activity_id || !actById(x.activity_id))) {
+        const f = sx.family || "other";
+        h += `<div class="sess"><div class="st"><i class="dot" style="background:${famColor(f)}"></i>${esc(sx.sport_raw || FAM[f])}<span class="nolink">no Garmin activity</span></div>${extraKv(sx)}${sessEditor(sx, null)}
+          ${aa.length ? `<details class="relink"><summary>Link to a Garmin activity</summary>
+            <select data-sid="${sx.id}" aria-label="Garmin activity for this session"><option value="">Not linked</option>
+            ${aa.filter((x) => !linkedOf(x)).map((x) => `<option value="${x.activity_id}">${String(x.start_local).slice(11, 16)} · ${esc(x.name || x.sport_key)} · ${hm(x.duration_s)}</option>`).join("")}
+            </select></details>` : ""}</div>`;
       }
+      h += `<div class="addrow"><button class="inline ghost" id="add-sess">+ Add session without Garmin</button></div>`;
       $("detail").innerHTML = h;
       $("detail").querySelectorAll("select[data-sid]").forEach((el) => (el.onchange = () => relink(el.dataset.sid, el.value)));
+      bindEditors(k);
       fillStrips();
+    }
+    // read-only details that came from an imported diary
+    function extraKv(sx) {
+      if (!sx) return "";
+      const kv = [sx.pain != null && ["Pain", sx.pain + (sx.pain_where ? " · " + sx.pain_where : "")]].filter(Boolean);
+      return (kv.length ? `<div class="kv">${kv.map(([l, v]) => `<span>${l} <b>${esc(v)}</b></span>`).join("")}</div>` : "") + (sx.structure ? `<div class="note" style="margin-top:6px;font-size:12px"><b>${esc(sx.structure)}</b></div>` : "");
+    }
+    function sessEditor(sx, a) {
+      const key = sx ? `s:${sx.id}` : `a:${a.activity_id}`, rpe = sx?.rpe;
+      return `<div class="ed" data-key="${key}">
+        <div class="r"><input class="grow" data-f="sport_raw" value="${esc(sx?.sport_raw || "")}" placeholder="${a ? esc(a.name || "Label") + " · label it" : "e.g. Gym, core, yoga"}" aria-label="Label">
+          ${a ? "" : `<select data-f="family" aria-label="Sport">${Object.entries(FAM).map(([f, l]) => `<option value="${f}" ${(sx?.family || "other") === f ? "selected" : ""}>${l}</option>`).join("")}</select>
+          <input class="num" data-f="duration_min" type="number" min="0" step="1" value="${sx?.duration_min ?? ""}" placeholder="min" aria-label="Minutes">
+          <input class="num" data-f="distance_km" type="number" min="0" step="0.1" value="${sx?.distance_km ?? ""}" placeholder="km" aria-label="Km">`}</div>
+        <div class="r"><span class="lab">RPE</span><span class="pick rpe">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `<button data-rpe="${n}" class="${rpe === n ? "on" : ""}">${n}</button>`).join("")}</span>
+          ${sx && !a ? `<button class="del" data-del="${sx.id}" style="margin-left:auto">Delete</button>` : ""}</div>
+        <textarea data-f="note" placeholder="Notes: how it felt, the workout, anything">${esc(sx?.note || "")}</textarea>
+      </div>`;
+    }
+
+    // ---- saving (debounced, quietly) ----
+    const savedMsg = (t, err) => { const el = $("saved"); if (el) { el.textContent = t; el.style.color = err ? "var(--danger)" : ""; } };
+    const timers = {};
+    const later = (id, fn, ms = 600) => { clearTimeout(timers[id]); savedMsg("Saving…"); timers[id] = setTimeout(fn, ms); };
+    async function saveDay(date, patch) {
+      const cur = data.days[date] || { date, tags: [], note: "" };
+      const row = { date, feel: cur.feel ?? null, tags: cur.tags ?? [], note: cur.note ?? "", ...patch, updated_at: new Date().toISOString() };
+      const { data: r, error } = await sb.from("days").upsert(row, { onConflict: "user_id,date" }).select().single();
+      if (error) return savedMsg(error.message, true);
+      data.days[date] = { ...cur, ...r }; savedMsg("Saved"); renderMini(); renderTimeline(); renderTotals();
+    }
+    const creating = {}; // activity id → pending insert, so fast typing never creates two rows
+    async function saveSess(key, date, patch) {
+      let sx = key.startsWith("s:") ? data.sessions.find((x) => x.id === key.slice(2)) : data.sessions.find((x) => String(x.activity_id) === key.slice(2));
+      if (!sx && key.startsWith("a:")) {
+        const id = key.slice(2);
+        creating[id] ||= (async () => {
+          const a = actById(id), ord = data.sessions.filter((x) => x.date === date).length;
+          const { data: r, error } = await sb.from("diary_sessions").insert({ date, ord, family: a.family, sport_raw: "", activity_id: Number(id), match_status: "manual", duration_min: a.duration_s ? Math.round(a.duration_s / 60) : null, distance_km: a.distance_m ? Math.round(a.distance_m / 100) / 10 : null }).select().single();
+          if (error) throw error;
+          data.sessions.push(r); return r;
+        })();
+        try { sx = await creating[id]; } catch (e) { delete creating[id]; return savedMsg(e.message, true); }
+      }
+      const { data: r, error } = await sb.from("diary_sessions").update(patch).eq("id", sx.id).select().single();
+      if (error) return savedMsg(error.message, true);
+      Object.assign(sx, r); savedMsg("Saved"); renderTimeline(); renderTotals(); renderMini();
+      const t = $("detail").querySelector(`.ed[data-key="${key}"]`)?.closest(".sess")?.querySelector(".wt"); if (t && patch.sport_raw != null) t.textContent = patch.sport_raw || actById(sx.activity_id)?.name || "";
+    }
+    function bindEditors(date) {
+      const day = $("detail").querySelector("[data-day]");
+      day.querySelectorAll("[data-feel]").forEach((b) => (b.onclick = () => {
+        const n = +b.dataset.feel, on = data.days[date]?.feel === n ? null : n;
+        day.querySelectorAll("[data-feel]").forEach((x) => { const sel = +x.dataset.feel === on; x.classList.toggle("on", sel); x.style.background = sel ? feelColor(on) : ""; });
+        saveDay(date, { feel: on });
+      }));
+      day.querySelectorAll("[data-tag]").forEach((b) => (b.onclick = () => {
+        b.classList.toggle("on");
+        saveDay(date, { tags: [...day.querySelectorAll("[data-tag].on")].map((x) => x.dataset.tag) });
+      }));
+      day.querySelector("textarea").oninput = (e) => later("day" + date, () => saveDay(date, { note: e.target.value }));
+      $("detail").querySelectorAll(".ed[data-key]").forEach((ed) => {
+        const key = ed.dataset.key;
+        ed.querySelectorAll("[data-f]").forEach((el) => {
+          const f = el.dataset.f, num = f === "duration_min" || f === "distance_km";
+          const fire = () => later(key + f, () => saveSess(key, date, { [f]: num ? (el.value === "" ? null : Number(el.value)) : el.value }), el.tagName === "SELECT" ? 0 : 600);
+          el.oninput = fire; if (el.tagName === "SELECT") el.onchange = fire;
+        });
+        ed.querySelectorAll("[data-rpe]").forEach((b) => (b.onclick = () => {
+          const was = b.classList.contains("on");
+          ed.querySelectorAll("[data-rpe]").forEach((x) => x.classList.toggle("on", !was && x === b));
+          saveSess(key, date, { rpe: was ? null : +b.dataset.rpe });
+        }));
+        ed.querySelector("[data-del]")?.addEventListener("click", async (e) => {
+          const id = e.target.dataset.del, { error } = await sb.from("diary_sessions").delete().eq("id", id);
+          if (error) return toast(error.message, true);
+          data.sessions = data.sessions.filter((x) => x.id !== id); render(); toast("Session deleted");
+        });
+      });
+      $("add-sess").onclick = async () => {
+        const ord = data.sessions.filter((x) => x.date === date).length;
+        const { data: r, error } = await sb.from("diary_sessions").insert({ date, ord, family: "other", sport_raw: "", match_status: "manual" }).select().single();
+        if (error) return toast(error.message, true);
+        data.sessions.push(r); render();
+        $("detail").querySelector(`.ed[data-key="s:${r.id}"] input`)?.focus();
+      };
     }
 
     // ---- the work: Garmin activity with a mini lap strip coloured by zone ----
