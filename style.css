@@ -19,7 +19,7 @@
   --run: #ea580c; --bike: #2563eb; --swim: #0891b2; --ski: #7c3aed;
   --strength: #db2777; --walk: #16a34a; --other: #71717a;
   /* training zones (fills; text on them stays dark) */
-  --z-easy: #34d399; --z-ap1: #60a5fa; --z-ap2: #fbbf24; --z-ap3: #f87171; --z-nm: #a78bfa; --z-rest: #e4e4e7; --z-none: #d4d4d8;
+  --z-easy: #60a5fa; --z-ap1: #34d399; --z-ap2: #fbbf24; --z-ap3: #f87171; --z-nm: #a78bfa; --z-rest: #e4e4e7; --z-none: #d4d4d8;
   /* feel 1–5 */
   --f1: #dc2626; --f2: #f97316; --f3: #eab308; --f4: #84cc16; --f5: #16a34a;
   color-scheme: light;

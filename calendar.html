@@ -435,7 +435,7 @@
         const total = Object.values(r.tiz).reduce((x, y) => x + y, 0) || 1;
         const top = NdureLaps.ORDER.filter((z) => z !== "none" && r.tiz[z] >= 30).sort((x, y) => r.tiz[y] - r.tiz[x]).slice(0, 4);
         const tz = el.parentElement.querySelector(".tizs");
-        const loadTxt = r.ld && r.ld.hr != null ? `<span class="ld">HR load <b>${r.ld.hr}</b> · body <b>${r.ld.body ?? "–"}</b> km-eq</span>` : "";
+        const loadTxt = r.ld && r.ld.hr != null ? `<span class="ld">HR load <b>${r.ld.hr}</b> · body <b>${r.ld.body ?? "–"}</b></span>` : "";
         if (tz) tz.innerHTML = r.hasZones ? loadTxt + top.map((z) => `<span><i style="background:var(--z-${z})"></i>${NdureLaps.SHORT[z]} ${hm(r.tiz[z])}</span>`).join("") : loadTxt + `<span class="muted">Set zones in Settings to colour laps</span>`;
       });
     }

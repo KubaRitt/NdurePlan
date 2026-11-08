@@ -84,12 +84,12 @@ Everything is rolling (windows ending today), not calendar weeks.
 1. **Tiles**: HR load, body load, running km, training time. Big number = last 7 days, plus 14 and 28 days,
    a 90-day sparkline of the 7-day sum, and a status (7 days ÷ 28-day weekly average: < 0.8 easing off,
    ≤ 1.3 steady, ≤ 1.5 building fast, above = spike). Click a tile to chart it.
-2. **Rolling sums**: 7-, 14- and 28-day sums for every day of the last 90.
-3. **Heart vs legs**: HR load and body load each as % of a normal week, on one scale, with an auto
-   sentence when they diverge (legs ahead = more pounding than usual).
+2. **Rolling sums**: 7-, 14- and 28-day sums for every day of the last 90, daily values as bars underneath.
+3. **Heart vs legs**: HR load and body load each as % of a normal week, on one scale, daily HR and body
+   load as bars underneath.
 4. **Where your time goes**: per sport and period (7 / 28 / 90 d), second-by-second heart rate in 5 bpm bins
    and pace (run/walk, min/km) or speed (km/h), each bar coloured by HR zone (speed bars by the average HR
-   at that speed). Histograms are stored per activity in `activity_metrics.hist`.
+   at that speed). The outline shows the previous period of the same length. Histograms are stored per activity in `activity_metrics.hist`.
 5. **Per sport**: distance / time / sessions for 7, 14, 28 days. Garmin activities plus diary sessions that
    aren't linked to one.
 
@@ -123,8 +123,9 @@ Calculated second by second from the saved track (`laps.js`, `load()`), also sho
 - **HR load** = Banister TRIMP: minutes × x × 0.64 × e^(1.92·x), x = (HR − resting) ÷ (max − resting).
   Resting HR is Garmin's value for that day (`days.rhr`), falling back to the one in Settings → Load.
   1 h easy ≈ 75, 30 min hard ≈ 95.
-- **Body load** = running-equivalent km: km × (speed ÷ easy pace, 0.4–2.5 for running/walking) × sport factor
-  (run/walk 1, ski 0.4, bike 0.1, swim 0) + 1 km per 100 m of descent.
+- **Body load** = points for bones, tendons and muscles: 10 per km × (speed ÷ easy pace, 0.4–2.5 for
+  running/walking) × sport factor (run/walk 1, ski 0.4, bike 0.1, swim 0) + 10 per 100 m of descent.
+  One easy km = 10.
 - Strength / HIIT: HR load = half of the same minutes of easy running (1 h ≈ 30 min), body load 0.
 - Settings → Load: max HR (198), resting HR fallback (48), easy running pace (5:30 /km).
 - Results are stored in `activity_metrics` with a `calc_key`; changing settings or the day's resting HR

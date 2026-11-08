@@ -68,9 +68,6 @@
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .legend i { width: 10px; height: 3px; border-radius: 2px; }
     .legend i.sq { width: 9px; height: 9px; border-radius: 2px; }
-    .insight { display: flex; gap: 10px; align-items: flex-start; background: var(--panel-2); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-2); margin: 8px 0 4px; }
-    .insight b { color: var(--text); }
-    .insight .ic { flex: none; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 800; }
 
     /* zone summary bar */
     .zbar { display: flex; height: 28px; border-radius: 6px; overflow: hidden; gap: 2px; margin: 8px 0 4px; }
@@ -96,6 +93,9 @@
     td b { font-weight: 650; }
     td small { display: block; color: var(--mute); font-size: 11px; }
     tfoot td { font-weight: 700; border-top: 1px solid var(--line); border-bottom: 0; }
+    .hint { font-size: 12px; font-weight: 500; color: var(--mute); margin-left: 6px; letter-spacing: 0; }
+    .chart.strip { height: 46px; margin-top: 2px; }
+    .now { display: flex; gap: 6px; flex-wrap: wrap; }
     .empty { color: var(--mute); font-size: 13px; padding: 36px 0; text-align: center; }
     .note { font-size: 11px; color: var(--mute); margin-top: 8px; }
     .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--text); color: #fff; font-size: 13px; font-weight: 550; padding: 10px 16px; border-radius: 10px; transition: transform .4s var(--spring), opacity .2s; z-index: 60; max-width: calc(100vw - 32px); }
@@ -120,7 +120,7 @@
 
   <main class="page" id="app" hidden>
     <div class="head">
-      <div><h1>Dashboard</h1><p id="range"></p></div>
+      <div><h1>Dashboard</h1></div>
       <button class="inline" id="sync">Sync last 120 days</button>
     </div>
 
@@ -130,27 +130,29 @@
     <!-- 2 · rolling sums -->
     <section class="panel">
       <div class="ph">
-        <div><h2 id="roll-title">Rolling sums</h2><p id="roll-sub">Every point is the total of the 7, 14 or 28 days ending that day.</p></div>
+        <div><h2 id="roll-title">Rolling sums</h2><p id="roll-sub"></p></div>
         <div class="seg" id="r-metric" role="tablist" aria-label="Metric"></div>
       </div>
       <div class="chart" id="rchart"></div>
+      <div class="chart strip" id="rdaily"></div>
       <div class="legend" id="rleg"></div>
     </section>
 
     <!-- 3 · heart vs legs -->
     <section class="panel">
       <div class="ph">
-        <div><h2>Heart vs legs</h2><p>Last 7 days as % of your normal week (28-day average), HR load and body load on one scale. 80–130 % is steady.</p></div>
+        <div><h2>Heart vs legs <span class="hint" title="Last 7 days as % of your 28-day average week. 80–130 % = steady.">% of normal week</span></h2></div>
+        <div class="now" id="bal-now"></div>
       </div>
-      <div class="insight" id="bal-insight"></div>
       <div class="chart" id="bchart"></div>
-      <div class="legend"><span><i style="background:var(--c-hr)"></i>HR load</span><span><i style="background:var(--c-body)"></i>Body load</span><span><i class="sq" style="background:#f0fdf4;border:1px solid #bbf7d0"></i>Steady 80–130 %</span></div>
+      <div class="chart strip" id="bdaily"></div>
+      <div class="legend"><span><i style="background:var(--c-hr)"></i>HR load</span><span><i style="background:var(--c-body)"></i>Body load</span><span><i class="sq" style="background:#f0fdf4;border:1px solid #bbf7d0"></i>80–130 %</span><span style="color:var(--mute)">bars: daily load</span></div>
     </section>
 
     <!-- 4 · distributions -->
     <section class="panel" style="padding-bottom:14px">
       <div class="ph">
-        <div><h2>Where your time goes</h2><p>Second by second from every saved activity: heart rate in 5 bpm steps and speed, coloured by HR zone.</p></div>
+        <div><h2>Time distribution <span class="hint" id="d-note"></span></h2></div>
         <div class="filters"><div class="seg" id="d-sport" aria-label="Sport"></div><div class="seg" id="d-period" aria-label="Period"><button data-v="7">7 d</button><button data-v="28" class="on">28 d</button><button data-v="90">90 d</button></div></div>
       </div>
       <div class="grid2">
@@ -165,7 +167,7 @@
           <div class="chart sm" id="schart"></div>
         </div>
       </div>
-      <div class="legend" style="margin-top:10px"><span><i class="sq" style="background:var(--z-easy)"></i>Easy</span><span><i class="sq" style="background:var(--z-ap1)"></i>AP1</span><span><i class="sq" style="background:var(--z-ap2)"></i>AP2</span><span><i class="sq" style="background:var(--z-ap3)"></i>AP3</span><span style="color:var(--mute)" id="d-note"></span></div>
+      <div class="legend" style="margin-top:10px"><span><i class="sq" style="background:var(--z-easy)"></i>Easy</span><span><i class="sq" style="background:var(--z-ap1)"></i>AP1</span><span><i class="sq" style="background:var(--z-ap2)"></i>AP2</span><span><i class="sq" style="background:var(--z-ap3)"></i>AP3</span><span id="d-prev-leg"><i class="sq" style="background:transparent;border:1.5px solid var(--text-2)"></i>previous period</span></div>
     </section>
 
     <!-- 5 · per sport -->
@@ -198,8 +200,8 @@
 
     // metric definitions (tiles + rolling chart)
     const MET = {
-      hr:   { label: "HR load",   unit: "TRIMP", color: "var(--c-hr)",   fmt: (x) => String(Math.round(x)), ratio: true },
-      body: { label: "Body load", unit: "km-eq", color: "var(--c-body)", fmt: (x) => x.toFixed(1), ratio: true },
+      hr:   { label: "HR load",   unit: "", color: "var(--c-hr)",   fmt: (x) => String(Math.round(x)), ratio: true },
+      body: { label: "Body load", unit: "", color: "var(--c-body)", fmt: (x) => String(Math.round(x)), ratio: true },
       km:   { label: "Running",   unit: "km",    color: "var(--run)",    fmt: (x) => x.toFixed(1) },
       time: { label: "Training",  unit: "h",     color: "#52525b",       fmt: (x) => hm(x * 3600) },
     };
@@ -214,7 +216,6 @@
     // ================= data =================
     async function load() {
       const from = ymd(addDays(today, -(NDAYS - 1))), to = ymd(today);
-      $("range").textContent = `Rolling windows ending today, ${today.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}`;
       const [a, s] = await Promise.all([
         sb.from("garmin_activities").select("activity_id,date,family,sport_key,duration_s,distance_m").gte("date", from).lte("date", to),
         sb.from("diary_sessions").select("date,family,duration_min,distance_km,activity_id").gte("date", from).lte("date", to).is("activity_id", null),
@@ -279,13 +280,12 @@
       $("tiles").innerHTML = Object.entries(MET).map(([k, m], j) => {
         const r = daily.roll[k], v7 = r[7][last];
         let chip = "";
-        if (m.ratio) { if (ready) { const [c, t] = status(ratioAt(k, last)); chip = `<span class="chip ${c}">${t}</span>`; } }
-        else { const c = r[28][last] / 4, d = c > 0 ? Math.round((100 * (v7 - c)) / c) : null; if (d != null) chip = `<span class="chip none">${d >= 0 ? "+" : ""}${d}% vs avg week</span>`; }
+        if (m.ratio) { if (ready) { const r = ratioAt(k, last), [c, t] = status(r); chip = `<span class="chip ${c}" title="7 days ÷ 28-day average week">${r == null ? "–" : r.toFixed(2)} ${t}</span>`; } }
+        else { const c = r[28][last] / 4, d = c > 0 ? Math.round((100 * (v7 - c)) / c) : null; if (d != null) chip = `<span class="chip none" title="vs 28-day average week">${d >= 0 ? "+" : ""}${d}%</span>`; }
         const val = m.ratio && !ready ? "…" : m.fmt(v7);
         return `<button class="tile${k === rMetric ? " on" : ""}" data-k="${k}" style="animation-delay:${j * 0.04}s" aria-pressed="${k === rMetric}">
           <div class="top"><span class="lbl"><i style="background:${m.color}"></i>${m.label}</span>${chip}</div>
-          <div class="big">${val}<small>${m.unit}</small></div>
-          <div class="cap">last 7 days</div>
+          <div class="big">${val}<small>${m.unit}</small><small style="font-weight:500">7 d</small></div>
           <div class="wins"><span>14 d <b>${m.fmt(r[14][last])}</b></span><span>28 d <b>${m.fmt(r[28][last])}</b></span></div>
           ${spark(r[7].slice(BACK), m.color)}
         </button>`;
@@ -331,19 +331,42 @@
       svg.onpointerleave = () => { tip.classList.remove("on"); cx.setAttribute("opacity", 0); svg.querySelectorAll(".cd").forEach((c) => c.setAttribute("opacity", 0)); };
     }
 
+    // ---- daily bars under a line chart, same x positions ----
+    function dailyStrip(el, days, series, fmt, ownScale) {
+      const W = el.clientWidth || 600, H = el.clientHeight || 54, N = days.length;
+      const pl = 38, pr = W < 500 ? 52 : 72, iw = W - pl - pr, ih = H - 4;
+      const X = (i) => pl + (iw * i) / (N - 1), bw = Math.max(1, iw / N - 1) / series.length;
+      const gmax = Math.max(1e-9, ...series.flatMap((s) => s.vals));
+      let g = `<line x1="${pl}" x2="${pl + iw}" y1="${ih}" y2="${ih}" stroke="var(--line)"/>`;
+      series.forEach((s, j) => {
+        const max = ownScale ? Math.max(1e-9, ...s.vals) : gmax;
+        s.vals.forEach((v, i) => { if (v > 0) { const h = Math.max(1.5, ((ih - 2) * v) / max); g += `<rect x="${(X(i) - (bw * series.length) / 2 + j * bw).toFixed(1)}" y="${(ih - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="1" fill="${s.color}" opacity=".45"/>`; } });
+      });
+      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}">${g}<rect x="${pl}" y="0" width="${iw}" height="${H}" fill="transparent"/></svg><div class="tip"></div>`;
+      const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+      svg.onpointermove = (e) => {
+        const r = svg.getBoundingClientRect(), sx = W / r.width, i = Math.max(0, Math.min(N - 1, Math.round((((e.clientX - r.left) * sx - pl) / iw) * (N - 1))));
+        tip.innerHTML = `<b>${dLabel(days[i])}</b><br>` + series.map((s) => `<i style="background:${s.color}"></i>${fmt(s.vals[i])}`).join("<br>");
+        tip.style.top = "-" + (series.length * 18 + 30) + "px";
+        tip.style.left = Math.max(70, Math.min(r.width - 70, X(i) / sx)) + "px"; tip.classList.add("on");
+      };
+      svg.onpointerleave = () => tip.classList.remove("on");
+    }
+
     // ---- 2 · rolling sums ----
     function renderRolling() {
       const m = MET[rMetric], r = daily.roll[rMetric], days = daily.days.slice(BACK);
       const col = { 7: "var(--c-w7)", 14: "var(--c-w14)", 28: "var(--c-w28)" };
-      $("roll-title").textContent = `Rolling sums · ${m.label} (${m.unit === "h" ? "h:mm" : m.unit})`;
-      if (ready || !m.ratio) $("roll-sub").textContent = `Each point is the total of the 7, 14 or 28 days ending that day, last ${SHOW} days.` + (daily.missing && m.ratio ? ` ${daily.missing} activities have no saved track yet.` : "");
+      $("roll-title").innerHTML = `Rolling sums <span class="hint">${m.label}${m.unit === "h" ? " · h:mm" : m.unit ? " · " + m.unit : ""}</span>`;
+      $("roll-sub").textContent = daily.missing && m.ratio && ready ? `${daily.missing} activities without a saved track` : "";
       lineChart($("rchart"), {
         days,
-        lines: [28, 14, 7].map((w) => ({ color: col[w], w: w === 7 ? 2.25 : 2, vals: r[w].slice(BACK), end: (v, narrow) => (narrow ? m.fmt(v) : `${w} d  ${m.fmt(v)}`) })),
+        lines: [28, 14, 7].map((w) => ({ color: col[w], w: w === 7 ? 2.25 : 2, vals: r[w].slice(BACK), end: (v) => m.fmt(v) })),
         yFmt: (v) => (m.unit === "h" ? Math.round(v) + " h" : rMetric === "hr" ? Math.round(v) : +v.toFixed(1)),
-        tipRow: (i) => WIN.map((w) => `<i style="background:${col[w]}"></i>${w} days: <b>${m.fmt(r[w][i + BACK])}</b> ${m.unit}`).join("<br>"),
+        tipRow: (i) => WIN.map((w) => `<i style="background:${col[w]}"></i>${w} d: <b>${m.fmt(r[w][i + BACK])}</b>`).join("<br>") + `<br><span class="z">day: ${m.fmt(daily.per[days[i]][rMetric])}</span>`,
       });
-      $("rleg").innerHTML = WIN.map((w) => `<span><i style="background:${col[w]}"></i>${w}-day sum</span>`).join("");
+      $("rleg").innerHTML = WIN.map((w) => `<span><i style="background:${col[w]}"></i>${w} d</span>`).join("") + `<span><i class="sq" style="background:${m.color};opacity:.5"></i>daily</span>`;
+      dailyStrip($("rdaily"), days, [{ color: m.color, vals: days.map((d) => daily.per[d][rMetric]) }], (v) => m.fmt(v) + (m.unit ? " " + m.unit : ""));
     }
 
     // ---- 3 · heart vs legs ----
@@ -351,19 +374,8 @@
       const days = daily.days.slice(BACK), N = days.length;
       const pct = (k) => days.map((_, i) => { const r = ratioAt(k, i + BACK); return r == null ? null : r * 100; });
       const hr = pct("hr"), bd = pct("body"), h = hr[N - 1], b = bd[N - 1];
-      let txt, ic = ["…", "var(--panel)", "var(--mute)"];
-      if (!ready) txt = "Calculating load…";
-      else if (h == null || b == null) txt = "Not enough history yet: sync at least 4 weeks of activities.";
-      else {
-        const [hc] = status(h / 100), [bc] = status(b / 100);
-        const w = (c, x, who) => `${who} <b>${Math.round(x)} %</b>` + (c === "good" ? "" : c === "low" ? " (easing off)" : c === "warn" ? " (building fast)" : " (spike)");
-        txt = `${w(hc, h, "Heart")} · ${w(bc, b, "legs")} of a normal week. `;
-        if (Math.abs(h - b) >= 25) txt += b > h ? "Legs are taking more than the heart: more running, speed or downhill than usual. Watch tendons and bones." : "Heart is working harder than the legs: more intensity or cross-training than usual, less pounding.";
-        else txt += "Heart and legs are moving together.";
-        const worst = [hc, bc].includes("bad") ? "bad" : [hc, bc].includes("warn") ? "warn" : [hc, bc].includes("low") ? "low" : "good";
-        ic = { good: ["✓", "var(--good-bg)", "var(--good-fg)"], low: ["↓", "var(--low-bg)", "var(--low-fg)"], warn: ["↑", "var(--warn-bg)", "var(--warn-fg)"], bad: ["!", "var(--bad-bg)", "var(--bad-fg)"] }[worst];
-      }
-      $("bal-insight").innerHTML = `<span class="ic" style="background:${ic[1]};color:${ic[2]}">${ic[0]}</span><span>${txt}</span>`;
+      const chip = (lab, v) => { const [c] = status(v == null ? null : v / 100); return `<span class="chip ${c}">${lab} ${v == null ? "–" : Math.round(v) + " %"}</span>`; };
+      $("bal-now").innerHTML = ready ? chip("HR", h) + chip("Body", b) : "";
       const top = Math.max(160, ...hr.filter((v) => v != null), ...bd.filter((v) => v != null));
       lineChart($("bchart"), {
         days, band: [80, 130], ref: 100, yMax: Math.min(top, 300),
@@ -374,6 +386,8 @@
           return row("hr", "var(--c-hr)", hr[i]) + "<br>" + row("body", "var(--c-body)", bd[i]);
         },
       });
+      // daily loads, each scaled to its own max (two side-by-side bars per day)
+      dailyStrip($("bdaily"), days, [{ color: "var(--c-hr)", vals: days.map((d) => daily.per[d].hr) }, { color: "var(--c-body)", vals: days.map((d) => daily.per[d].body) }], (v) => String(Math.round(v)), true);
     }
 
     // ---- 4 · distributions ----
@@ -381,13 +395,18 @@
     const topRounded = (x, y, w, h, r) => { if (h <= 0) return ""; r = Math.min(r, w / 2, h); return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`; };
     function barChart(el, bars, { xLabel, ticks, marker }) {
       const W = el.clientWidth || 500, H = el.clientHeight || 210, pl = 4, pr = 4, pt = 14, pb = 22, iw = W - pl - pr, ih = H - pt - pb;
-      const n = bars.length, max = Math.max(1e-9, ...bars.map((b) => b.v)), bw = iw / n, gap = bw > 8 ? 2 : 1;
+      const n = bars.length, max = Math.max(1e-9, ...bars.map((b) => Math.max(b.v, b.p || 0))), bw = iw / n, gap = bw > 8 ? 2 : 1;
       let g = `<line x1="${pl}" x2="${pl + iw}" y1="${pt + ih}" y2="${pt + ih}" stroke="var(--line)"/>`;
       bars.forEach((b, i) => {
         const h = (ih * b.v) / max;
         g += `<path d="${topRounded(pl + i * bw + gap / 2, pt + ih - h, Math.max(1, bw - gap), h, 3)}" fill="${b.color}" class="bar" data-b="${i}"/>`;
         if (ticks(i, bw)) g += `<line x1="${pl + i * bw}" x2="${pl + i * bw}" y1="${pt + ih}" y2="${pt + ih + 3}" stroke="var(--faint)"/><text x="${pl + i * bw}" y="${H - 6}" text-anchor="middle">${xLabel(i)}</text>`;
       });
+      // previous period as a step outline
+      if (bars.some((b) => b.p != null)) {
+        let d = ""; bars.forEach((b, i) => { const y = (pt + ih - (ih * (b.p || 0)) / max).toFixed(1); d += `${i ? "L" : "M"}${(pl + i * bw).toFixed(1)},${y}H${(pl + (i + 1) * bw).toFixed(1)}`; });
+        g += `<path d="${d}" fill="none" stroke="var(--text-2)" stroke-width="1.5" stroke-linejoin="round" opacity=".75"/>`;
+      }
       if (marker) { const mx = pl + marker.at * bw; g += `<line x1="${mx}" x2="${mx}" y1="${pt - 4}" y2="${pt + ih}" stroke="var(--text-2)" stroke-dasharray="3 3"/><text x="${mx + 4}" y="${pt + 4}" style="fill:var(--text-2);font-weight:650">${marker.label}</text>`; }
       el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${bars.map((_, i) => `<rect x="${pl + i * bw}" y="0" width="${bw}" height="${pt + ih}" fill="transparent" data-i="${i}"/>`).join("")}</svg><div class="tip"></div>`;
       const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
@@ -395,7 +414,7 @@
         const t = e.target.closest("[data-i]"); if (!t) return;
         const i = +t.dataset.i, r = svg.getBoundingClientRect(), sx = W / r.width;
         svg.querySelectorAll(".bar").forEach((p) => (p.style.opacity = +p.dataset.b === i ? 1 : 0.4));
-        tip.innerHTML = bars[i].tip; tip.style.left = Math.max(90, Math.min(r.width - 90, (pl + (i + 0.5) * bw) / sx)) + "px"; tip.classList.add("on");
+        tip.innerHTML = bars[i].tip + (bars[i].p != null ? `<br><span class="z">previous: ${hmL(bars[i].p)}</span>` : ""); tip.style.left = Math.max(90, Math.min(r.width - 90, (pl + (i + 0.5) * bw) / sx)) + "px"; tip.classList.add("on");
       };
       svg.onpointerleave = () => { tip.classList.remove("on"); svg.querySelectorAll(".bar").forEach((p) => (p.style.opacity = 1)); };
     }
@@ -418,12 +437,17 @@
       $("d-sport").innerHTML = fams.map((f) => `<button data-v="${f}" class="${f === dSport ? "on" : ""}"><i style="background:var(--${f})"></i>${FAML[f]}</button>`).join("");
       $("d-sport").querySelectorAll("button").forEach((b) => (b.onclick = () => { dSport = b.dataset.v; renderDist(); }));
       const sel = inP.filter((a) => (a.family || "other") === dSport);
-      $("d-note").textContent = sel.length ? `· ${sel.length} ${FAML[dSport].toLowerCase()} ${sel.length === 1 ? "activity" : "activities"}, last ${dPeriod} days` : "";
+      // same-length period before, for the outline (only while it fits in the loaded history)
+      const hasPrev = dPeriod * 2 <= NDAYS, pSince = ymd(addDays(today, -(2 * dPeriod - 1)));
+      const prev = hasPrev ? acts.filter((a) => a.date >= pSince && a.date < since && (a.family || "other") === dSport && metrics[a.activity_id]?.hist) : [];
+      $("d-prev-leg").style.display = hasPrev ? "" : "none";
+      $("d-note").textContent = sel.length ? `${sel.length}×` : "";
       if (!sel.length) return emptyDist("No saved activities in this period. Sync to save them.");
       const z = (zones && zones[L.zoneKey(dSport)]) || {};
 
       // heart rate, 5 bpm bins
       const hr = {}; for (const a of sel) for (const [k, v] of Object.entries(metrics[a.activity_id].hist.hr || {})) hr[k] = (hr[k] || 0) + v;
+      const hrP = {}; for (const a of prev) for (const [k, v] of Object.entries(metrics[a.activity_id].hist.hr || {})) hrP[k] = (hrP[k] || 0) + v;
       const hk = Object.keys(hr).map(Number).sort((a, b) => a - b), tot = hk.reduce((s, k) => s + hr[k], 0);
       if (!tot) { $("zbar").innerHTML = $("zlab").innerHTML = ""; $("hchart").innerHTML = `<div class="empty">No heart rate recorded.</div>`; }
       else {
@@ -436,7 +460,7 @@
         $("zlab").innerHTML = zs.map(([k, v]) => `<span><i style="background:${ZCOL[k]}"></i>${k === "none" ? "No zones set" : L.LABEL[k]} <b>${hmL(v)}</b></span>`).join("");
         barChart($("hchart"), keys.map((k) => {
           const v = hr[k] || 0, zk = L.hrZone(k + 2, z);
-          return { v, color: ZCOL[zk], tip: `<b>${k}–${k + 4} bpm</b><br>${hmL(v)} · ${((100 * v) / tot).toFixed(1)} %<br><span class="z">${zk === "none" ? "no zones set" : L.LABEL[zk]}</span>` };
+          return { v, p: hasPrev ? hrP[k] || 0 : null, color: ZCOL[zk], tip: `<b>${k}–${k + 4} bpm</b><br>${hmL(v)} · ${((100 * v) / tot).toFixed(1)} %<br><span class="z">${zk === "none" ? "no zones set" : L.LABEL[zk]}</span>` };
         }), { xLabel: (i) => keys[i], ticks: (i, bw) => keys[i] % every([10, 20, 40], bw / 5) === 0 });
       }
 
@@ -448,6 +472,8 @@
       const sk = Object.keys(sp).map(Number).sort((a, b) => a - b);
       if (!sk.length) { $("sstats").innerHTML = ""; $("schart").innerHTML = `<div class="empty">No speed recorded for ${FAML[dSport].toLowerCase()}.</div>`; return; }
       const step = pace ? (sk[sk.length - 1] - sk[0] > 300 ? 10 : 5) : 1;
+      const aggP = {};
+      for (const a of prev) { const h = metrics[a.activity_id].hist; if (h.unit !== unit) continue; for (const [k, c] of Object.entries(h.sp || {})) { const b = Math.floor(k / (unit === "pace" ? (sk[sk.length - 1] - sk[0] > 300 ? 10 : 5) : 1)) * (unit === "pace" ? (sk[sk.length - 1] - sk[0] > 300 ? 10 : 5) : 1); aggP[b] = (aggP[b] || 0) + c[0]; } }
       const agg = {}; for (const k of sk) { const b = Math.floor(k / step) * step, o = (agg[b] ||= [0, 0, 0]); o[0] += sp[k][0]; o[1] += sp[k][1]; o[2] += sp[k][2]; }
       const ks = Object.keys(agg).map(Number); let full = [];
       for (let k = Math.min(...ks); k <= Math.max(...ks); k += step) full.push(k);
@@ -464,7 +490,7 @@
       const mi = pace ? full.findIndex((k) => k <= ep && k + step > ep) : -1;
       barChart($("schart"), full.map((k) => {
         const c = agg[k] || [0, 0, 0], ah = c[2] ? c[1] / c[2] : null, zk = ah ? L.hrZone(ah, z) : "none";
-        return { v: c[0], color: ZCOL[zk], tip: `<b>${rng(k)}</b><br>${hmL(c[0])} · ${((100 * c[0]) / stot).toFixed(1)} %<br><span class="z">avg HR ${ah ? Math.round(ah) + " bpm · " + (zk === "none" ? "no zone" : L.LABEL[zk]) : "–"}</span>` };
+        return { v: c[0], p: hasPrev ? aggP[k] || 0 : null, color: ZCOL[zk], tip: `<b>${rng(k)}</b><br>${hmL(c[0])} · ${((100 * c[0]) / stot).toFixed(1)} %<br><span class="z">avg HR ${ah ? Math.round(ah) + " bpm · " + (zk === "none" ? "no zone" : L.LABEL[zk]) : "–"}</span>` };
       }), {
         xLabel: (i) => (pace ? paceS(full[i]) : full[i]),
         ticks: (i, bw) => full[i] % every(pace ? [15, 30, 60, 120, 300] : [1, 2, 5, 10, 20], bw / step) === 0,

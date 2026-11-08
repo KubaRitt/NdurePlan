@@ -259,11 +259,11 @@
       const parts = [];
       if (ld.basis === "trimp") {
         parts.push(`TRIMP with resting HR ${ld.rest}${rhr ? " (Garmin, that day)" : " (Settings)"} and max HR ${ld.max}`);
-        if (ld.km) parts.push(`${ld.km} km${ld.descent ? `, ${ld.descent} m down` : ""} → ${ld.body} running-equivalent km`);
+        if (ld.km) parts.push(`body from ${ld.km} km${ld.descent ? `, ${ld.descent} m down` : ""}`);
       } else parts.push(ld.note);
       $("load").innerHTML = `<div class="loads">
           <div><b>${ld.hr ?? "–"}</b><span>HR load (TRIMP)</span></div>
-          <div><b>${ld.body ?? "–"}</b><span>Body load (run-equiv. km)</span></div>
+          <div><b>${ld.body ?? "–"}</b><span>Body load</span></div>
         </div>
         <p class="lnote">${esc(parts.join(" · "))} · <a href="settings.html">settings</a></p>`;
       lapLoads = ld.laps || [];
@@ -293,11 +293,11 @@
       // ---- lap table ----
       const pw = r.hasPower;
       $("laps-sub").textContent = r.hasSpeed ? "pace from the speed sensor" : "";
-      $("laps").innerHTML = `<thead><tr><th>#</th><th>Zone</th><th>Start</th><th>Time</th><th>Distance</th><th>${paceUnit() === "speed" ? "Speed" : "Pace"}</th><th>Avg HR</th><th>Max HR</th>${pw ? "<th>Power</th>" : ""}${lapLoads.some(Boolean) ? "<th>HR load</th><th>Body km</th>" : ""}</tr></thead>
+      $("laps").innerHTML = `<thead><tr><th>#</th><th>Zone</th><th>Start</th><th>Time</th><th>Distance</th><th>${paceUnit() === "speed" ? "Speed" : "Pace"}</th><th>Avg HR</th><th>Max HR</th>${pw ? "<th>Power</th>" : ""}${lapLoads.some(Boolean) ? "<th>HR load</th><th>Body load</th>" : ""}</tr></thead>
         <tbody>${laps.map((l, k) => `<tr data-k="${k}">
           <td>${l.n}</td><td><span class="zp" style="background:${ZC(l.zone)}">${L.SHORT[l.zone]}</span>${l.intensity && l.intensity !== "active" ? `<span class="it">${esc(INT[l.intensity] || l.intensity)}</span>` : ""}</td>
           <td>${clock(l.t0)}</td><td>${clock(l.dur)}</td><td>${km(l.dist)}</td>
-          <td class="${l.fast ? "fast" : ""}">${fmtSpeed(l.speed)}</td><td>${l.hr ?? "–"}</td><td>${l.hrMax ?? "–"}</td>${pw ? `<td>${l.power ?? "–"}</td>` : ""}${lapLoads.some(Boolean) ? `<td>${lapLoads[k] ? lapLoads[k].hr.toFixed(1) : "–"}</td><td>${lapLoads[k] ? lapLoads[k].body.toFixed(2) : "–"}</td>` : ""}</tr>`).join("")}</tbody>`;
+          <td class="${l.fast ? "fast" : ""}">${fmtSpeed(l.speed)}</td><td>${l.hr ?? "–"}</td><td>${l.hrMax ?? "–"}</td>${pw ? `<td>${l.power ?? "–"}</td>` : ""}${lapLoads.some(Boolean) ? `<td>${lapLoads[k] ? lapLoads[k].hr.toFixed(1) : "–"}</td><td>${lapLoads[k] ? lapLoads[k].body.toFixed(1) : "–"}</td>` : ""}</tr>`).join("")}</tbody>`;
       document.querySelectorAll("#laps tbody tr").forEach((tr) => { tr.onmouseenter = () => highlight(+tr.dataset.k); tr.onmouseleave = () => highlight(-1); });
     }
 

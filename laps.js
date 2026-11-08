@@ -248,12 +248,13 @@
   // HR load   = Banister TRIMP, second by second:
   //             minutes × x × 0.64 × e^(1.92·x),  x = (HR − resting HR) / (max HR − resting HR)
   //             resting HR = that day's Garmin value (fallback in Settings), max HR from Settings.
-  // Body load = running-equivalent km (bones, tendons, muscles):
-  //             km × speed factor (running/walking: your speed ÷ your easy pace, 0.4–2.5) + 1 km per 100 m of descent,
-  //             then × sport factor: run/walk 1 · ski 0.4 · bike 0.1 · swim 0.
+  // Body load = points for bones, tendons, muscles: 10 per km × speed factor
+  //             (running/walking: your speed ÷ your easy pace, 0.4–2.5) + 10 per 100 m of descent,
+  //             then × sport factor: run/walk 1 · ski 0.4 · bike 0.1 · swim 0.  (1 easy km = 10)
   // Strength / HIIT: HR load = half of what the same minutes of easy running would give
   //             (1 h ≈ 30 min easy running); body load 0.
-  const LOAD_VERSION = 3;
+  const LOAD_VERSION = 4;
+  const BODY_PTS = 10; // points per running-equivalent km
   const DEFAULTS = { max_hr: 198, rest_hr: 48, easy_pace_s: 330 }; // 5:30 /km
   const BODY_SPORT = { run: 1, walk: 1, ski: 0.4, bike: 0.1, swim: 0, strength: 0, other: 0 };
   const FIXED_RE = /strength|hiit|crossfit|cardio|boulder|climb|functional|weight/;
@@ -299,9 +300,9 @@
       }
     }
     const sum = (arr, a = 0, b = s.n) => { let x = 0; for (let i = a; i < b; i++) x += arr[i]; return x; };
-    const laps = res.laps.map((l) => ({ hr: Math.round(sum(hrPer, l.i0, l.i1) * 10) / 10, body: Math.round(sum(bodyPer, l.i0, l.i1) * 10) / 10 }));
+    const laps = res.laps.map((l) => ({ hr: Math.round(sum(hrPer, l.i0, l.i1) * 10) / 10, body: Math.round(sum(bodyPer, l.i0, l.i1) * BODY_PTS * 10) / 10 }));
     return {
-      hr: hasHr ? Math.round(sum(hrPer)) : null, body: Math.round(sum(bodyPer) * 10) / 10, km: Math.round(km * 10) / 10,
+      hr: hasHr ? Math.round(sum(hrPer)) : null, body: Math.round(sum(bodyPer) * BODY_PTS), km: Math.round(km * 10) / 10,
       descent: Math.round(descent), basis: "trimp", rest, max, laps, version: LOAD_VERSION,
     };
   }
