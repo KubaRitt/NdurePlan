@@ -81,10 +81,15 @@ Then add the Vercel URL in Supabase → Authentication → URL Configuration
 
 Everything is rolling (windows ending today), not calendar weeks.
 
-1. **Tiles**: HR load, body load, running km, training time. Big number = last 7 days, plus 14 and 28 days,
+1. **Tiles**: HR load, body load, volume (time + km). Big number = last 7 days, plus 14 and 28 days,
    a 90-day sparkline of the 7-day sum, and a status (7 days ÷ 28-day weekly average: < 0.8 easing off,
    ≤ 1.3 steady, ≤ 1.5 building fast, above = spike). Click a tile to chart it.
-2. **Rolling sums**: 7-, 14- and 28-day sums for every day of the last 90, daily values as bars underneath.
+2. **Load chart**:
+   - Metric: HR load · Body load · HR + Body (body × a coefficient = total HR ÷ total body load over the
+     loaded period, rounded, so both sit on one scale) · Volume (per sport, time or km).
+   - Window: 7·14·28 (three rolling sums together, line only) · Day · 7 d · 14 d · 28 d rolling sum.
+   - Line or bars (volume bars stack by sport, HR + Body bars sit side by side).
+   - Range: 1 week · 1 month · 3 months · custom dates (older data is loaded when needed).
 3. **Heart vs legs**: HR load and body load each as % of a normal week, on one scale, daily HR and body
    load as bars underneath.
 4. **Where your time goes**: per sport and period (7 / 28 / 90 d), second-by-second heart rate in 5 bpm bins

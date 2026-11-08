@@ -18,8 +18,8 @@
     .head p { margin: 2px 0 0; color: var(--mute); font-size: 13px; }
 
     /* ---- hero tiles ---- */
-    .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-    @media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 700px) { .tiles { grid-template-columns: 1fr; } }
     @media (max-width: 420px) { .tiles { gap: 8px; } }
     .tile { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 10px; position: relative; overflow: hidden; transition: border-color .15s, box-shadow .15s; animation: rise .45s var(--spring) both; }
     .tile:hover { border-color: #d4d4d8; }
@@ -54,6 +54,12 @@
     .seg button:focus-visible { outline: 2px solid var(--text); }
     .seg button i { width: 7px; height: 7px; border-radius: 50%; }
     .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .ctrl { margin: 4px 0 8px; }
+    .ctrl .sp { flex: 1; }
+    .seg button:disabled { opacity: .35; cursor: default; }
+    .custom { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mute); }
+    .custom[hidden] { display: none; }
+    .custom input { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); width: auto; }
 
     .chart { position: relative; height: 250px; margin-top: 4px; }
     .chart.sm { height: 210px; }
@@ -130,11 +136,18 @@
     <!-- 2 · rolling sums -->
     <section class="panel">
       <div class="ph">
-        <div><h2 id="roll-title">Rolling sums</h2><p id="roll-sub"></p></div>
-        <div class="seg" id="r-metric" role="tablist" aria-label="Metric"></div>
+        <div><h2 id="roll-title">Load</h2><p id="roll-sub"></p></div>
+        <div class="seg" id="r-metric" aria-label="Metric"></div>
+      </div>
+      <div class="filters ctrl">
+        <div class="seg" id="r-win" aria-label="Rolling window"></div>
+        <div class="seg" id="r-unit" aria-label="Volume unit"><button data-v="t" class="on">Time</button><button data-v="km">Km</button></div>
+        <div class="seg" id="r-type" aria-label="Chart type"><button data-v="line" class="on">Line</button><button data-v="bar">Bars</button></div>
+        <span class="sp"></span>
+        <div class="seg" id="r-range" aria-label="Range"><button data-v="7">1 W</button><button data-v="30">1 M</button><button data-v="90" class="on">3 M</button><button data-v="custom">Custom</button></div>
+        <span class="custom" id="r-custom" hidden><input type="date" id="r-from" aria-label="From"><span>–</span><input type="date" id="r-to" aria-label="To"></span>
       </div>
       <div class="chart" id="rchart"></div>
-      <div class="chart strip" id="rdaily"></div>
       <div class="legend" id="rleg"></div>
     </section>
 
@@ -189,7 +202,7 @@
     const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const SHOW = 90, BACK = 27, NDAYS = SHOW + BACK; // graph days + history for the first 28-day window
+    const SHOW = 90, BACK = 27; // default graph days + history needed before the first 28-day window
     const WIN = [7, 14, 28];
     const FAM = [["run", "Run"], ["bike", "Bike"], ["ski", "Ski"], ["swim", "Swim"], ["walk", "Walk"], ["strength", "Strength"], ["other", "Other"]];
     const FAML = Object.fromEntries(FAM);
@@ -198,15 +211,17 @@
     const paceS = (p) => `${Math.floor(p / 60)}:${String(Math.round(p % 60)).padStart(2, "0")}`;
     const dLabel = (d) => new Date(d + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
-    // metric definitions (tiles + rolling chart)
+    // metric definitions (tiles + load chart)
     const MET = {
       hr:   { label: "HR load",   unit: "", color: "var(--c-hr)",   fmt: (x) => String(Math.round(x)), ratio: true },
       body: { label: "Body load", unit: "", color: "var(--c-body)", fmt: (x) => String(Math.round(x)), ratio: true },
-      km:   { label: "Running",   unit: "km",    color: "var(--run)",    fmt: (x) => x.toFixed(1) },
-      time: { label: "Training",  unit: "h",     color: "#52525b",       fmt: (x) => hm(x * 3600) },
+      vol:  { label: "Volume",    unit: "h", color: "#52525b",      fmt: (x) => hm(x * 3600) },
     };
-    let items = [], acts = [], metrics = {}, zones = {}, daily = null, ready = false;
-    let rMetric = "hr", dSport = null, dPeriod = 28;
+    const WCOL = { 7: "var(--c-w7)", 14: "var(--c-w14)", 28: "var(--c-w28)" };
+    let items = [], acts = [], metrics = {}, zones = {}, daily = null, ready = false, loadedFrom = null;
+    let dSport = null, dPeriod = 28;
+    // load chart state
+    let rMetric = "hr", rWin = "all", rUnit = "t", rType = "line", rRange = "90", rFrom = null, rTo = null;
 
     function toast(t, err) {
       const el = $("toast"); el.textContent = t; el.className = "toast on" + (err ? " err" : "");
@@ -214,13 +229,15 @@
     }
 
     // ================= data =================
-    async function load() {
-      const from = ymd(addDays(today, -(NDAYS - 1))), to = ymd(today);
+    // from = first day to load (needs 27 days before the first day shown, for the 28-day windows)
+    async function load(from = ymd(addDays(today, -(SHOW + BACK - 1)))) {
+      const to = ymd(today);
       const [a, s] = await Promise.all([
         sb.from("garmin_activities").select("activity_id,date,family,sport_key,duration_s,distance_m").gte("date", from).lte("date", to),
         sb.from("diary_sessions").select("date,family,duration_min,distance_km,activity_id").gte("date", from).lte("date", to).is("activity_id", null),
       ]);
       if (a.error || s.error) toast((a.error || s.error).message, true);
+      loadedFrom = from;
       acts = a.data ?? [];
       // Garmin activities, plus diary-only sessions (not linked) so nothing is counted twice
       items = [
@@ -234,28 +251,35 @@
         zones = await M.settings();
         metrics = await M.ensure(acts, (i, n) => ($("roll-sub").textContent = `Calculating load ${i}/${n}…`));
       } catch (e) { toast("Couldn't calculate load: " + e.message, true); }
-      ready = true;
+      ready = true; $("roll-sub").textContent = "";
       buildDaily(); renderAll();
     }
 
+    const rollOf = (v, w) => { let s = 0; return v.map((x, i) => { s += x; if (i >= w) s -= v[i - w]; return s; }); };
     function buildDaily() {
-      const days = [...Array(NDAYS)].map((_, i) => ymd(addDays(today, i - NDAYS + 1)));
-      const per = Object.fromEntries(days.map((d) => [d, { hr: 0, body: 0, km: 0, time: 0 }]));
+      const n = Math.round((today - new Date(loadedFrom + "T00:00")) / 864e5) + 1;
+      const days = [...Array(n)].map((_, i) => ymd(addDays(today, i - n + 1)));
+      const index = Object.fromEntries(days.map((d, i) => [d, i]));
+      const per = days.map(() => ({ hr: 0, body: 0, t: {}, m: {} }));
       let missing = 0;
       for (const a of acts) {
-        if (!per[a.date]) continue;
+        const i = index[a.date]; if (i == null) continue;
         const r = metrics[a.activity_id];
         if (!r || r.hr_load == null) { missing++; continue; }
-        per[a.date].hr += r.hr_load; per[a.date].body += Number(r.body_load) || 0;
+        per[i].hr += r.hr_load; per[i].body += Number(r.body_load) || 0;
       }
-      for (const x of items) if (per[x.date]) { if (x.f === "run") per[x.date].km += x.m / 1000; per[x.date].time += x.t / 3600; }
+      for (const x of items) { const i = index[x.date]; if (i == null) continue; per[i].t[x.f] = (per[i].t[x.f] || 0) + x.t / 3600; per[i].m[x.f] = (per[i].m[x.f] || 0) + x.m / 1000; }
+      const base = {
+        hr: per.map((p) => p.hr), body: per.map((p) => p.body),
+        vol: per.map((p) => Object.values(p.t).reduce((a, b) => a + b, 0)),
+        km: per.map((p) => Object.values(p.m).reduce((a, b) => a + b, 0)),
+      };
       const roll = {};
-      for (const k of Object.keys(MET)) {
-        const v = days.map((d) => per[d][k]);
-        roll[k] = {};
-        for (const w of WIN) { let s = 0; roll[k][w] = v.map((x, i) => { s += x; if (i >= w) s -= v[i - w]; return s; }); }
-      }
-      daily = { days, per, roll, missing };
+      for (const k of Object.keys(base)) roll[k] = Object.fromEntries([1, ...WIN].map((w) => [w, w === 1 ? base[k] : rollOf(base[k], w)]));
+      // HR + body: scale body so both have the same total over the loaded period, rounded to a readable number
+      const sh = base.hr.reduce((a, b) => a + b, 0), sbd = base.body.reduce((a, b) => a + b, 0);
+      let k = sh > 0 && sbd > 0 ? sh / sbd : 1; const p = 10 ** Math.floor(Math.log10(k)); k = Math.round((k / p) * 2) / 2 * p;
+      daily = { days, index, per, base, roll, missing, k: +k.toPrecision(2) };
     }
     // last 7 days ÷ (last 28 days / 4), for day index i
     const ratioAt = (k, i) => { const c = daily.roll[k][28][i] / 4; return c > 0 ? daily.roll[k][7][i] / c : null; };
@@ -276,29 +300,42 @@
     }
     function selectMetric(k) { rMetric = k; renderTiles(); renderRolling(); }
     function renderTiles() {
-      const last = NDAYS - 1;
+      const last = daily.days.length - 1, from = Math.max(0, last - SHOW + 1);
       $("tiles").innerHTML = Object.entries(MET).map(([k, m], j) => {
         const r = daily.roll[k], v7 = r[7][last];
-        let chip = "";
-        if (m.ratio) { if (ready) { const r = ratioAt(k, last), [c, t] = status(r); chip = `<span class="chip ${c}" title="7 days ÷ 28-day average week">${r == null ? "–" : r.toFixed(2)} ${t}</span>`; } }
-        else { const c = r[28][last] / 4, d = c > 0 ? Math.round((100 * (v7 - c)) / c) : null; if (d != null) chip = `<span class="chip none" title="vs 28-day average week">${d >= 0 ? "+" : ""}${d}%</span>`; }
+        let chip = "", extra = "";
+        if (m.ratio) { if (ready) { const x = ratioAt(k, last), [c, t] = status(x); chip = `<span class="chip ${c}" title="7 days ÷ 28-day average week">${x == null ? "–" : x.toFixed(2)} ${t}</span>`; } }
+        else { const c = r[28][last] / 4, d = c > 0 ? Math.round((100 * (v7 - c)) / c) : null; if (d != null) chip = `<span class="chip none" title="vs 28-day average week">${d >= 0 ? "+" : ""}${d}%</span>`; extra = `<small style="font-weight:500">· ${daily.roll.km[7][last].toFixed(1)} km</small>`; }
         const val = m.ratio && !ready ? "…" : m.fmt(v7);
-        return `<button class="tile${k === rMetric ? " on" : ""}" data-k="${k}" style="animation-delay:${j * 0.04}s" aria-pressed="${k === rMetric}">
+        return `<button class="tile${k === rMetric || (rMetric === "both" && m.ratio) ? " on" : ""}" data-k="${k}" style="animation-delay:${j * 0.04}s">
           <div class="top"><span class="lbl"><i style="background:${m.color}"></i>${m.label}</span>${chip}</div>
-          <div class="big">${val}<small>${m.unit}</small><small style="font-weight:500">7 d</small></div>
+          <div class="big">${val}<small>${m.unit}</small><small style="font-weight:500">7 d</small>${extra}</div>
           <div class="wins"><span>14 d <b>${m.fmt(r[14][last])}</b></span><span>28 d <b>${m.fmt(r[28][last])}</b></span></div>
-          ${spark(r[7].slice(BACK), m.color)}
+          ${spark(r[7].slice(from), m.color)}
         </button>`;
       }).join("");
       $("tiles").querySelectorAll(".tile").forEach((b) => (b.onclick = () => selectMetric(b.dataset.k)));
-      $("r-metric").innerHTML = Object.entries(MET).map(([k, m]) => `<button data-k="${k}" class="${k === rMetric ? "on" : ""}" role="tab" aria-selected="${k === rMetric}"><i style="background:${m.color}"></i>${m.label}</button>`).join("");
-      $("r-metric").querySelectorAll("button").forEach((b) => (b.onclick = () => selectMetric(b.dataset.k)));
     }
-
     // ---- line chart (one y-axis, crosshair, direct labels at the end) ----
     function niceStep(x) { const p = 10 ** Math.floor(Math.log10(x || 1)), f = x / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
+    // x labels: month starts for long ranges, days (every few) for short ones
+    function xAxis(days, X, pt, ih, H, iw) {
+      let g = "", N = days.length;
+      if (N > 45) {
+        days.forEach((d, i) => { const dt = new Date(d + "T00:00"); if (dt.getDate() === 1) g += `<line x1="${X(i)}" x2="${X(i)}" y1="${pt}" y2="${pt + ih}" stroke="var(--line)"/><text x="${X(i) + 4}" y="${H - 6}">${dt.toLocaleDateString("en-GB", { month: "short" })}</text>`; });
+      } else {
+        const every = [1, 2, 7].find((e) => (iw / N) * e >= 34) || 7;
+        days.forEach((d, i) => {
+          const dt = new Date(d + "T00:00"), mon = dt.getDay() === 1;
+          if (mon && N > 7) g += `<line x1="${X(i)}" x2="${X(i)}" y1="${pt}" y2="${pt + ih}" stroke="var(--line-2)"/>`;
+          if (every === 7 ? mon : (N - 1 - i) % every === 0) g += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle">${N <= 7 ? dt.toLocaleDateString("en-GB", { weekday: "short" }) + " " : ""}${dt.getDate()}${dt.getDate() === 1 || i === 0 ? " " + dt.toLocaleDateString("en-GB", { month: "short" }) : ""}</text>`;
+        });
+      }
+      return g;
+    }
     function lineChart(el, { days, lines, yMin = 0, yMax, yFmt, band, ref, tipRow }) {
       const W = el.clientWidth || 600, H = el.clientHeight || 250, N = days.length;
+      if (N < 2) { el.innerHTML = `<div class="empty">Pick at least 2 days.</div>`; return; }
       const narrow = W < 500, pl = 38, pr = narrow ? 52 : 72, pt = 10, pb = 22, iw = W - pl - pr, ih = H - pt - pb;
       const all = lines.flatMap((l) => l.vals.filter((v) => v != null));
       const hi = yMax ?? Math.max(1e-9, ...all, band ? band[1] : 0);
@@ -308,10 +345,7 @@
       if (band) g += `<rect x="${pl}" width="${iw}" y="${Y(Math.min(band[1], top))}" height="${Y(band[0]) - Y(Math.min(band[1], top))}" fill="#f0fdf4"/>`;
       for (let v = yMin; v <= top + 1e-9; v += step) g += `<line x1="${pl}" x2="${pl + iw}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line-2)"/><text x="${pl - 6}" y="${Y(v) + 3}" text-anchor="end">${yFmt(v)}</text>`;
       if (ref != null) g += `<line x1="${pl}" x2="${pl + iw}" y1="${Y(ref)}" y2="${Y(ref)}" stroke="var(--faint)" stroke-dasharray="4 4"/>`;
-      days.forEach((d, i) => {
-        const dt = new Date(d + "T00:00");
-        if (dt.getDate() === 1) g += `<line x1="${X(i)}" x2="${X(i)}" y1="${pt}" y2="${pt + ih}" stroke="var(--line)"/><text x="${X(i) + 4}" y="${H - 6}">${dt.toLocaleDateString("en-GB", { month: "short" })}</text>`;
-      });
+      g += xAxis(days, X, pt, ih, H, iw);
       const path = (vals) => { let d = "", on = false; vals.forEach((v, i) => { if (v == null) { on = false; return; } d += `${on ? "L" : "M"}${X(i).toFixed(1)},${Y(Math.min(v, top)).toFixed(1)}`; on = true; }); return d; };
       const paths = lines.map((l) => `<path d="${path(l.vals)}" fill="none" stroke="${l.color}" stroke-width="${l.w || 2}" stroke-linejoin="round" stroke-linecap="round"/>`).join("");
       // direct labels at the right end, nudged apart so they never collide
@@ -353,26 +387,132 @@
       svg.onpointerleave = () => tip.classList.remove("on");
     }
 
-    // ---- 2 · rolling sums ----
-    function renderRolling() {
-      const m = MET[rMetric], r = daily.roll[rMetric], days = daily.days.slice(BACK);
-      const col = { 7: "var(--c-w7)", 14: "var(--c-w14)", 28: "var(--c-w28)" };
-      $("roll-title").innerHTML = `Rolling sums <span class="hint">${m.label}${m.unit === "h" ? " · h:mm" : m.unit ? " · " + m.unit : ""}</span>`;
-      $("roll-sub").textContent = daily.missing && m.ratio && ready ? `${daily.missing} activities without a saved track` : "";
-      lineChart($("rchart"), {
-        days,
-        lines: [28, 14, 7].map((w) => ({ color: col[w], w: w === 7 ? 2.25 : 2, vals: r[w].slice(BACK), end: (v) => m.fmt(v) })),
-        yFmt: (v) => (m.unit === "h" ? Math.round(v) + " h" : rMetric === "hr" ? Math.round(v) : +v.toFixed(1)),
-        tipRow: (i) => WIN.map((w) => `<i style="background:${col[w]}"></i>${w} d: <b>${m.fmt(r[w][i + BACK])}</b>`).join("<br>") + `<br><span class="z">day: ${m.fmt(daily.per[days[i]][rMetric])}</span>`,
+    // ---- time bars: stacked (one bar per day) or grouped (side by side) ----
+    function timeBars(el, { days, series, grouped, yFmt, tipRow }) {
+      const W = el.clientWidth || 600, H = el.clientHeight || 250, N = days.length;
+      const pl = 38, pr = 12, pt = 10, pb = 22, iw = W - pl - pr, ih = H - pt - pb;
+      const tot = days.map((_, i) => (grouped ? Math.max(...series.map((s) => s.vals[i] || 0)) : series.reduce((a, s) => a + (s.vals[i] || 0), 0)));
+      const hi = Math.max(1e-9, ...tot), step = niceStep(hi / 4), top = Math.ceil(hi / step) * step;
+      const slot = iw / N, X = (i) => pl + slot * (i + 0.5), Y = (v) => pt + ih - (ih * v) / top;
+      const gap = slot > 10 ? 2 : slot > 4 ? 1 : 0, bw = Math.max(1, slot - gap);
+      let g = "";
+      for (let v = 0; v <= top + 1e-9; v += step) g += `<line x1="${pl}" x2="${pl + iw}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line-2)"/><text x="${pl - 6}" y="${Y(v) + 3}" text-anchor="end">${yFmt(v)}</text>`;
+      g += xAxis(days, X, pt, ih, H, iw);
+      days.forEach((_, i) => {
+        if (grouped) {
+          const w = bw / series.length;
+          series.forEach((s, j) => { const v = s.vals[i] || 0, h = (ih * v) / top; if (h > 0) g += `<path class="bar" data-b="${i}" d="${topRounded(X(i) - bw / 2 + j * w, pt + ih - h, Math.max(0.8, w - (gap ? 1 : 0)), h, 2)}" fill="${s.color}"/>`; });
+        } else {
+          let y0 = 0; const segs = series.map((s) => s.vals[i] || 0), last = segs.reduce((a, v, j) => (v > 0 ? j : a), -1);
+          series.forEach((s, j) => {
+            const v = segs[j]; if (!(v > 0)) return;
+            const h = (ih * v) / top, y = pt + ih - (ih * y0) / top - h;
+            g += j === last ? `<path class="bar" data-b="${i}" d="${topRounded(X(i) - bw / 2, y, bw, h, 2)}" fill="${s.color}"/>` : `<rect class="bar" data-b="${i}" x="${X(i) - bw / 2}" y="${y}" width="${bw}" height="${Math.max(0, h - (h > 3 ? 1 : 0))}" fill="${s.color}"/>`;
+            y0 += v;
+          });
+        }
       });
-      $("rleg").innerHTML = WIN.map((w) => `<span><i style="background:${col[w]}"></i>${w} d</span>`).join("") + `<span><i class="sq" style="background:${m.color};opacity:.5"></i>daily</span>`;
-      dailyStrip($("rdaily"), days, [{ color: m.color, vals: days.map((d) => daily.per[d][rMetric]) }], (v) => m.fmt(v) + (m.unit ? " " + m.unit : ""));
+      el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}<rect x="${pl}" y="0" width="${iw}" height="${pt + ih}" fill="transparent"/></svg><div class="tip"></div>`;
+      const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+      svg.onpointermove = (e) => {
+        const r = svg.getBoundingClientRect(), sx = W / r.width, i = Math.max(0, Math.min(N - 1, Math.floor(((e.clientX - r.left) * sx - pl) / slot)));
+        svg.querySelectorAll(".bar").forEach((b) => (b.style.opacity = +b.dataset.b === i ? 1 : 0.45));
+        tip.innerHTML = `<b>${dLabel(days[i])}</b><br>${tipRow(i)}`;
+        tip.style.left = Math.max(90, Math.min(r.width - 90, X(i) / sx)) + "px"; tip.classList.add("on");
+      };
+      svg.onpointerleave = () => { tip.classList.remove("on"); svg.querySelectorAll(".bar").forEach((b) => (b.style.opacity = 1)); };
     }
+
+    // ---- 2 · load chart ----
+    const RMET = { hr: ["HR load", "var(--c-hr)"], body: ["Body load", "var(--c-body)"], both: ["HR + Body", null], vol: ["Volume", "#52525b"] };
+    const WINS = [["all", "7·14·28"], [1, "Day"], [7, "7 d"], [14, "14 d"], [28, "28 d"]];
+    function rangeIdx() {
+      const last = daily.days.length - 1;
+      if (rRange !== "custom") { const n = +rRange; return [Math.max(0, last - n + 1), last]; }
+      const a = daily.index[rFrom], b = daily.index[rTo];
+      return [a ?? 0, b ?? last];
+    }
+    function renderControls() {
+      const canAll = rType === "line" && rMetric !== "both";
+      if (!canAll && rWin === "all") rWin = 7;
+      $("r-metric").innerHTML = Object.entries(RMET).map(([k, [lab, c]]) => `<button data-v="${k}" class="${k === rMetric ? "on" : ""}">${c ? `<i style="background:${c}"></i>` : `<i style="background:var(--c-hr)"></i><i style="background:var(--c-body);margin-left:-4px"></i>`}${lab}</button>`).join("");
+      $("r-win").innerHTML = WINS.map(([w, lab]) => `<button data-v="${w}" class="${String(w) === String(rWin) ? "on" : ""}" ${w === "all" && !canAll ? "disabled" : ""} title="${w === "all" ? "7, 14 and 28-day sums together" : w === 1 ? "Each day on its own" : `Rolling ${w}-day sum`}">${lab}</button>`).join("");
+      $("r-unit").style.display = rMetric === "vol" ? "" : "none";
+      $("r-unit").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === rUnit));
+      $("r-type").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === rType));
+      $("r-range").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === rRange));
+      $("r-custom").hidden = rRange !== "custom";
+    }
+    function renderRolling() {
+      renderControls();
+      const [a, b] = rangeIdx(), days = daily.days.slice(a, b + 1), sl = (v) => v.slice(a, b + 1);
+      const wl = rWin === "all" ? "" : rWin === 1 ? "daily" : `${rWin}-day sum`;
+      const el = $("rchart"); let legend = [];
+      $("roll-title").innerHTML = `Load <span class="hint">${days.length} days${wl ? " · " + wl : " · rolling 7, 14, 28-day sums"}</span>`;
+      if (ready && daily.missing && rMetric !== "vol") $("roll-sub").textContent = `${daily.missing} activities without a saved track`;
+
+      if (rMetric === "vol") {
+        const km = rUnit === "km", fmt = km ? (x) => x.toFixed(1) + " km" : (x) => hm(x * 3600) + " h", yFmt = km ? (v) => +v.toFixed(1) : (v) => (v % 1 ? hm(v * 3600) : v + " h");
+        const key = km ? "km" : "vol";
+        if (rWin === "all") {
+          const lines = [28, 14, 7].map((w) => ({ color: WCOL[w], w: w === 7 ? 2.25 : 2, vals: sl(daily.roll[key][w]), end: fmt }));
+          lineChart(el, { days, lines, yFmt, tipRow: (i) => WIN.map((w) => `<i style="background:${WCOL[w]}"></i>${w} d: <b>${fmt(daily.roll[key][w][a + i])}</b>`).join("<br>") });
+          legend = WIN.map((w) => [WCOL[w], `${w} d`, "line"]);
+        } else {
+          // per sport, in the fixed sport order (colour follows the sport)
+          const fams = FAM.map(([f]) => f).filter((f) => daily.per.some((p, i) => i >= a && i <= b && p[km ? "m" : "t"][f] > 0));
+          const series = fams.map((f) => ({ f, color: `var(--${f})`, vals: sl(rollOf(daily.per.map((p) => p[km ? "m" : "t"][f] || 0), rWin)) }));
+          const total = sl(daily.roll[key][rWin]);
+          const tipRow = (i) => series.filter((s) => s.vals[i] > 0).map((s) => `<i style="background:${s.color}"></i>${FAML[s.f]}: <b>${fmt(s.vals[i])}</b>`).join("<br>") + `<br>Total: <b>${fmt(total[i])}</b>`;
+          if (!series.length) el.innerHTML = `<div class="empty">No training in this range.</div>`;
+          else if (rType === "bar") timeBars(el, { days, series, yFmt, tipRow });
+          else lineChart(el, { days, yFmt, tipRow, lines: [...series.map((s) => ({ ...s, w: 1.75, end: () => "" })), { color: "var(--text)", w: 2.25, vals: total, end: fmt }] });
+          legend = series.map((s) => [s.color, FAML[s.f], rType === "bar" ? "sq" : "line"]).concat(rType === "bar" ? [] : [["var(--text)", "Total", "line"]]);
+        }
+      } else if (rMetric === "both") {
+        const k = daily.k, hr = sl(daily.roll.hr[rWin]), bd = sl(daily.roll.body[rWin]).map((v) => v * k);
+        const tipRow = (i) => `<i style="background:var(--c-hr)"></i>HR load: <b>${Math.round(hr[i])}</b><br><i style="background:var(--c-body)"></i>Body load: <b>${Math.round(bd[i] / k)}</b> <span class="z">× ${k} = ${Math.round(bd[i])}</span>`;
+        if (rType === "bar") timeBars(el, { days, grouped: true, series: [{ color: "var(--c-hr)", vals: hr }, { color: "var(--c-body)", vals: bd }], yFmt: (v) => Math.round(v), tipRow });
+        else lineChart(el, { days, yFmt: (v) => Math.round(v), tipRow, lines: [{ color: "var(--c-body)", vals: bd, end: (v) => Math.round(v / k) }, { color: "var(--c-hr)", vals: hr, end: (v) => Math.round(v) }] });
+        legend = [["var(--c-hr)", "HR load", rType === "bar" ? "sq" : "line"], ["var(--c-body)", `Body load × ${k}`, rType === "bar" ? "sq" : "line"]];
+      } else {
+        const m = MET[rMetric], r = daily.roll[rMetric];
+        if (rWin === "all") {
+          lineChart(el, { days, yFmt: (v) => Math.round(v), lines: [28, 14, 7].map((w) => ({ color: WCOL[w], w: w === 7 ? 2.25 : 2, vals: sl(r[w]), end: m.fmt })), tipRow: (i) => WIN.map((w) => `<i style="background:${WCOL[w]}"></i>${w} d: <b>${m.fmt(r[w][a + i])}</b>`).join("<br>") + `<br><span class="z">day: ${m.fmt(r[1][a + i])}</span>` });
+          legend = WIN.map((w) => [WCOL[w], `${w} d`, "line"]);
+        } else {
+          const vals = sl(r[rWin]), tipRow = (i) => `<i style="background:${m.color}"></i>${wl}: <b>${m.fmt(vals[i])}</b>` + (rWin !== 1 ? `<br><span class="z">day: ${m.fmt(r[1][a + i])}</span>` : "");
+          if (rType === "bar") timeBars(el, { days, series: [{ color: m.color, vals }], yFmt: (v) => Math.round(v), tipRow });
+          else lineChart(el, { days, yFmt: (v) => Math.round(v), tipRow, lines: [{ color: m.color, vals, w: 2.25, end: m.fmt }] });
+          legend = [[m.color, `${m.label} · ${wl}`, rType === "bar" ? "sq" : "line"]];
+        }
+      }
+      $("rleg").innerHTML = legend.map(([c, t, kind]) => `<span><i class="${kind === "sq" ? "sq" : ""}" style="background:${c}"></i>${t}</span>`).join("");
+    }
+    function bindSeg(id, set) {
+      $(id).onclick = (e) => { const b = e.target.closest("button"); if (!b || b.disabled) return; set(b.dataset.v); renderTiles(); renderRolling(); };
+    }
+    bindSeg("r-metric", (v) => (rMetric = v));
+    bindSeg("r-win", (v) => (rWin = v === "all" ? "all" : +v));
+    bindSeg("r-unit", (v) => (rUnit = v));
+    bindSeg("r-type", (v) => (rType = v));
+    bindSeg("r-range", (v) => {
+      rRange = v;
+      if (v === "custom" && !rFrom) { rTo = ymd(today); rFrom = ymd(addDays(today, -59)); $("r-from").value = rFrom; $("r-to").value = rTo; }
+    });
+    for (const id of ["r-from", "r-to"]) $(id).onchange = async () => {
+      let f = $("r-from").value, t = $("r-to").value; if (!f || !t) return;
+      if (t > ymd(today)) t = $("r-to").value = ymd(today);
+      if (f > t) [f, t] = [t, f];
+      rFrom = f; rTo = t;
+      const need = ymd(addDays(new Date(f + "T00:00"), -BACK));
+      if (need < loadedFrom) await load(need); else renderRolling();
+    };
 
     // ---- 3 · heart vs legs ----
     function renderBalance() {
-      const days = daily.days.slice(BACK), N = days.length;
-      const pct = (k) => days.map((_, i) => { const r = ratioAt(k, i + BACK); return r == null ? null : r * 100; });
+      const off = Math.max(0, daily.days.length - SHOW), days = daily.days.slice(off), N = days.length;
+      const pct = (k) => days.map((_, i) => { const r = ratioAt(k, i + off); return r == null ? null : r * 100; });
       const hr = pct("hr"), bd = pct("body"), h = hr[N - 1], b = bd[N - 1];
       const chip = (lab, v) => { const [c] = status(v == null ? null : v / 100); return `<span class="chip ${c}">${lab} ${v == null ? "–" : Math.round(v) + " %"}</span>`; };
       $("bal-now").innerHTML = ready ? chip("HR", h) + chip("Body", b) : "";
@@ -382,12 +522,12 @@
         lines: [{ color: "var(--c-body)", vals: bd, end: (v, n) => (n ? "" : "Body ") + Math.round(v) + "%" }, { color: "var(--c-hr)", vals: hr, end: (v, n) => (n ? "" : "HR ") + Math.round(v) + "%" }],
         yFmt: (v) => Math.round(v) + "%",
         tipRow: (i) => {
-          const k = i + BACK, row = (key, c, v) => `<i style="background:${c}"></i>${MET[key].label}: <b>${v == null ? "–" : Math.round(v) + " %"}</b> <span class="z">${MET[key].fmt(daily.roll[key][7][k])} vs ${MET[key].fmt(daily.roll[key][28][k] / 4)} / wk</span>`;
+          const k = i + off, row = (key, c, v) => `<i style="background:${c}"></i>${MET[key].label}: <b>${v == null ? "–" : Math.round(v) + " %"}</b> <span class="z">${MET[key].fmt(daily.roll[key][7][k])} vs ${MET[key].fmt(daily.roll[key][28][k] / 4)} / wk</span>`;
           return row("hr", "var(--c-hr)", hr[i]) + "<br>" + row("body", "var(--c-body)", bd[i]);
         },
       });
       // daily loads, each scaled to its own max (two side-by-side bars per day)
-      dailyStrip($("bdaily"), days, [{ color: "var(--c-hr)", vals: days.map((d) => daily.per[d].hr) }, { color: "var(--c-body)", vals: days.map((d) => daily.per[d].body) }], (v) => String(Math.round(v)), true);
+      dailyStrip($("bdaily"), days, [{ color: "var(--c-hr)", vals: daily.base.hr.slice(off) }, { color: "var(--c-body)", vals: daily.base.body.slice(off) }], (v) => String(Math.round(v)), true);
     }
 
     // ---- 4 · distributions ----
@@ -438,7 +578,7 @@
       $("d-sport").querySelectorAll("button").forEach((b) => (b.onclick = () => { dSport = b.dataset.v; renderDist(); }));
       const sel = inP.filter((a) => (a.family || "other") === dSport);
       // same-length period before, for the outline (only while it fits in the loaded history)
-      const hasPrev = dPeriod * 2 <= NDAYS, pSince = ymd(addDays(today, -(2 * dPeriod - 1)));
+      const hasPrev = dPeriod * 2 <= daily.days.length, pSince = ymd(addDays(today, -(2 * dPeriod - 1)));
       const prev = hasPrev ? acts.filter((a) => a.date >= pSince && a.date < since && (a.family || "other") === dSport && metrics[a.activity_id]?.hist) : [];
       $("d-prev-leg").style.display = hasPrev ? "" : "none";
       $("d-note").textContent = sel.length ? `${sel.length}×` : "";
