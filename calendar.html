@@ -26,7 +26,7 @@
     .mini button:hover { background: var(--panel-2); }
     .mini button.out { color: #d4d4d8; }
     .mini button.today { color: var(--text); font-weight: 800; }
-    .mini button.wk { background: #eef2ff; border-radius: 0; }
+    .mini button.wk { background: #f4f4f5; border-radius: 0; }
     .mini button.wk.mon { border-radius: 6px 0 0 6px; } .mini button.wk.sun { border-radius: 0 6px 6px 0; }
     .mini button.sel { background: var(--text); color: #fff; border-radius: 6px; }
     .mini button .dots { position: absolute; left: 0; right: 0; bottom: 3px; display: flex; justify-content: center; gap: 2px; }
@@ -53,15 +53,18 @@
     .day { flex-shrink: 0; display: flex; align-items: stretch; gap: 10px; padding: 0 8px; border-radius: var(--radius); border: 1px solid transparent; cursor: pointer; min-height: 52px; transition: border-color .15s, background .15s; }
     .day:hover { border-color: var(--line); }
     .day.we { background: #fafafa; }
-    /* weeks: header row + alternating band + accent on the selected week */
-    .wkh { flex-shrink: 0; display: flex; align-items: baseline; gap: 10px; padding: 12px 8px 6px; position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); }
-    .wkh b { font-size: 12px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
-    .wkh span { font-size: 12px; color: var(--mute); }
-    .wkh .wt { margin-left: auto; display: flex; gap: 12px; font-variant-numeric: tabular-nums; color: var(--text-2); font-weight: 600; }
-    .wkh.cur b { color: #4f46e5; }
-    .day.odd:not(.sel) { background: #f7f7f8; }
-    .day.odd.we:not(.sel) { background: #f1f1f3; }
-    .day.inwk { box-shadow: inset 3px 0 0 #4f46e5; }
+    /* weeks: every other week gets a faint tint, a small gap before each Monday */
+    .day.we:not(.odd):not(.sel) { background: none; }
+    .day.odd:not(.sel) { background: #f6f6f8; }
+    .day.mon { margin-top: 8px; }
+    .day.mon:first-child { margin-top: 0; }
+    /* days in a week sit flush: no outline, one shaded block per week */
+    .tl { gap: 0; }
+    .day { border: 0; border-radius: 0; }
+    .day:hover { border: 0; background: #f0f0f2; }
+    .day.mon, .day:first-child { border-top-left-radius: 8px; border-top-right-radius: 8px; }
+    .day.sun, .day:last-child { border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+    .day.sel { border-radius: 8px; }
     .day.sel { background: var(--text); border-color: var(--text); color: #fff; }
     .day .dc { width: 46px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; padding: 6px 0; }
     .day .dc small { font-size: 11px; font-weight: 700; color: var(--faint); }
@@ -341,13 +344,8 @@
       for (let i = 1; i <= last; i++) {
         const d = new Date(view.getFullYear(), view.getMonth(), i), k = ymd(d), { d: day, ss, garminOnly } = dayData(k);
         const isSel = +d === +sel, isWe = d.getDay() === 0 || d.getDay() === 6;
-        const ws = monday(d), wn = isoWeek(d);
-        if (i === 1 || d.getDay() === 1) {
-          const t = weekSum(ws), we = addDays(ws, 6), fmt = (x) => x.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-          h += `<div class="wkh${+ws === +monday(today) ? " cur" : ""}"><b>Week ${wn}</b><span>${fmt(ws)} – ${fmt(we)}</span>
-            <span class="wt">${t.n ? `<span>${Math.floor(t.secs / 3600)}:${String(Math.round((t.secs % 3600) / 60)).padStart(2, "0")} h</span><span>${(t.meters / 1000).toFixed(1)} km</span><span>${t.n}×</span>` : "<span style='color:var(--faint);font-weight:500'>rest</span>"}</span></div>`;
-        }
-        const cls = [isSel ? "sel" : isWe ? "we" : "", wn % 2 ? "odd" : "", +ws === +monday(sel) ? "inwk" : ""].filter(Boolean).join(" ");
+        const wn = isoWeek(d);
+        const cls = [isSel ? "sel" : isWe ? "we" : "", wn % 2 ? "odd" : "", d.getDay() === 1 ? "mon" : "", d.getDay() === 0 ? "sun" : ""].filter(Boolean).join(" ");
         h += `<div class="day ${cls}" data-k="${k}" ${isSel ? 'id="sel-row"' : ""}>
           <div class="dc"><small>${d.toLocaleDateString("en-GB", { weekday: "short" })}</small><b>${i}</b>${+d === +today ? "<em>today</em>" : ""}</div>
           <div class="vl"></div>
